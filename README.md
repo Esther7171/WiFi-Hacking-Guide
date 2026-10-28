@@ -4,6 +4,20 @@ A hands-on WiFi hacking and penetration testing guide, written from my own lab n
 
 > **Read this first.** Everything here is for networks you own or have **written permission** to test, and for learning in a lab you control. Attacking or jamming WiFi you do not own is illegal almost everywhere. See the [legal section](#legal-and-ethics) at the end. This guide exists so defenders understand the attack, not so anyone runs it on strangers.
 
+## The whole procedure at a glance
+
+<div align="center">
+  <img src="assets/wifi-testing-procedure.png" alt="WiFi penetration test full procedure: prepare, attack in scope, defend and report" width="900">
+</div>
+
+A wireless assessment runs in three phases, and every attack step has a matching defence step. That pairing is the whole point: you run the attack to prove the gap, then you tell the client how to detect and close it.
+
+1. **Prepare.** Get a **signed scope and rules-of-engagement**, then put a monitor-mode adapter on the air. No signature, no test.
+2. **Attack (in scope only).** Recon both bands, lock onto one in-scope target, capture the WPA/WPA2 handshake or PMKID, and crack it **offline**. Optional in-scope paths are WPS brute force, an evil twin to test client trust, and deauth/[mdk4](Documents/mdk4.md) which is a lab-only denial-of-service.
+3. **Defend and report.** Show how the blue team detects each attack (IDS, `tshark` on management frames), what hardening kills it (802.11w/PMF, WPA3, WPS off), and write it all up. The report is the deliverable, not the crack.
+
+The rest of this guide walks each box in order, starting at [monitor mode](#monitor-mode). Deep-dive companions: **[mdk4 attack modes and detection](Documents/mdk4.md)**, **[Fake-auth and ARP replay](Documents/fake-auth.md)**, and **[WPA2-Enterprise / 802.1X testing](Documents/wpa2-enterprise.md)**.
+
 ## Contents
 1. [Why WiFi testing matters](#why-wifi-testing-matters)
 2. [How a real engagement starts](#how-a-real-engagement-starts)
@@ -25,6 +39,8 @@ A hands-on WiFi hacking and penetration testing guide, written from my own lab n
 18. [Choosing the right attack](#choosing-the-right-attack)
 19. [Where IoT fits in](#where-iot-fits-in)
 20. [Legal and ethics](#legal-and-ethics)
+
+**Companion deep-dives:** [mdk4 attack modes and detection](Documents/mdk4.md) · [Fake-auth and ARP replay](Documents/fake-auth.md) · [WPA2-Enterprise / 802.1X testing](Documents/wpa2-enterprise.md)
 
 ---
 
@@ -94,7 +110,7 @@ sudo apt install aircrack-ng hashcat hcxdumptool hcxtools wifite reaver bully ho
 If you want my adapter-driver setup script:
 
 ```bash
-git clone https://github.com/Esther7171/WiFi-Hacking-Guide && cd WiFi-Hacking-Guide && chmod +x install.sh && ./install.sh
+git clone https://gitlab.com/deathesther/wifi-hacking-guide && cd wifi-hacking-guide && chmod +x Documents/install.sh && ./Documents/install.sh
 ```
 
 ## Monitor mode
@@ -394,7 +410,28 @@ Use these to move fast, but only after you can do it by hand. An automated tool 
 
 A deauthentication frame tells a client it has been disconnected. Deauth frames are a normal, required part of 802.11, and before WPA3 they are unprotected, so any device that has seen the AP and client addresses can forge one.
 
-Used in short, targeted bursts to force a reconnect, deauth is a legitimate capture step, and that is covered above. Sent **continuously**, the same frame becomes a **denial-of-service attack**: it keeps a network or a client offline for as long as it runs. I am deliberately not shipping a copy-paste "keep it down forever" loop or an mdk4 flood recipe here, because that is a disruption weapon, not a test, and sustained jamming is specifically illegal (see the legal section). It is also almost never in scope on a real engagement, since taking a client's network down during business hours is exactly what they are paying you not to do.
+Used in short, targeted bursts to force a reconnect, deauth is a legitimate capture step, and that is covered above. Sent **continuously**, the same frame becomes a **denial-of-service attack**: it keeps a network or a client offline for as long as it runs.
+
+> **Lab only, and here is why.** The commands below will knock real devices off a real network. Run them only against an AP **you own** or that is **explicitly in scope**, in a lab or an isolated test SSID. Sustained jamming is specifically illegal (see the [legal section](#legal-and-ethics)), and it is almost never in scope on a real engagement, because taking a client offline during business hours is exactly what they pay you not to do. The value of knowing these is the **detection** half in the [next section](#how-the-blue-team-detects-it): you run it briefly in a lab to generate the signature, then prove the blue team can see it.
+
+**Continuous deauth with aireplay-ng (freezing a lab client).** Drop the count to `0` and aireplay-ng sends until you stop it with Ctrl+C. Omit `-c` to hit every client on the AP.
+
+```bash
+sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 wlan0mon          # all clients, until Ctrl+C
+sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 -c 54:EF:44:AA:BB:CC wlan0mon   # one client
+```
+
+Reference: the official [aireplay-ng documentation](https://www.aircrack-ng.org/doku.php?id=aireplay-ng) covers every mode (deauth, fakeauth, arpreplay, test).
+
+**mdk4 (beacon flood, auth DoS, and more).** mdk4 is the broader 802.11 stress tool. A beacon flood (mode `b`) fills every scanner in range with fake APs, which is also the classic way to flood a Wireshark capture with noise; an auth DoS (mode `a`) can freeze an AP outright.
+
+```bash
+sudo mdk4 wlan0mon b -n FakeNet          # beacon flood: fake APs (clutters scanners/Wireshark)
+sudo mdk4 wlan0mon a -a 3C:84:6A:11:22:33 # authentication DoS against one AP
+sudo mdk4 wlan0mon d -b blacklist.txt -c 6 # continuous deauth of listed BSSIDs
+```
+
+Full breakdown of all ten mdk4 modes, the IDS-evasion flags, and the detection signature for each: **[Documents/mdk4.md](Documents/mdk4.md)**.
 
 What matters for a portfolio and for a defender is the other half: a deauth or beacon flood is loud and obvious, and a blue team should catch it instantly. That is the next section.
 
@@ -492,7 +529,7 @@ Where to aim, quickly:
 
 You do not always need a laptop. A NodeMCU the size of a thumb, running on a power bank, can run deauth and beacon attacks on 2.4GHz on its own. I built one to understand that threat from the inside, and it pairs directly with the detection half of this guide.
 
-Full write-up and firmware: [ESP8266 Deauther](https://github.com/Esther7171/ESP8266-Deauther).
+Full write-up and firmware: [ESP8266 Deauther](https://gitlab.com/deathesther/esp8266-deauther).
 
 ## Legal and ethics
 <a id="legal-and-ethics"></a>
