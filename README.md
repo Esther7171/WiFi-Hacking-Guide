@@ -128,8 +128,6 @@ Then look at your wireless interfaces. On Kali the internal or first adapter is 
 iwconfig
 ```
 
-![Interface in managed mode](https://github.com/Esther7171/web-development/assets/122229257/e86417f9-d99a-4b11-b222-876c1b25b9fb)
-
 It will say `Mode:Managed`. Two ways to flip it to monitor.
 
 ### The manual way (good to understand once)
@@ -141,9 +139,6 @@ sudo iwconfig wlan0 mode monitor
 sudo ifconfig wlan0 up
 iwconfig                       # confirm it now says Mode:Monitor
 ```
-
-![airmon-ng check kill](https://github.com/Esther7171/web-development/assets/122229257/1865dd19-d01a-47b3-b7f9-74f6d9750af2)
-![Interface in monitor mode](https://github.com/Esther7171/web-development/assets/122229257/f754b3a2-9844-463b-8896-0b5ba3c05d3d)
 
 ### The fast way
 
@@ -178,8 +173,6 @@ List everything in the air:
 ```bash
 sudo airodump-ng wlan0mon
 ```
-
-![airodump-ng scan](https://github.com/Esther7171/web-development/assets/122229257/dd887d5b-5665-46e8-9a21-8149062b33ca)
 
 By default airodump only scans 2.4GHz. To sweep 2.4GHz and 5GHz together, add `--band abg`. The letters are the 802.11 PHYs: `a` is 5GHz, `b` and `g` are 2.4GHz. So `abg` means "scan all of them."
 
@@ -220,8 +213,6 @@ Once I have picked an in-scope network, I stop sweeping and watch only it, on it
 sudo airodump-ng --bssid 3C:84:6A:11:22:33 -c 11 --write capture wlan0mon
 ```
 
-![Targeting a single AP](https://github.com/Esther7171/web-development/assets/122229257/9bc23ec6-1f6a-4916-8ca4-52262d0e6699)
-
 Now the display shows just that AP and the clients on it. `--write capture` saves to `capture-01.cap` and friends. Leave this running; it is the capture that will catch the handshake.
 
 ## Capture the handshake
@@ -250,8 +241,6 @@ When the client reconnects, airodump catches the handshake and prints it in the 
 ```
  CH 11 ][ WPA handshake: 3C:84:6A:11:22:33 ]
 ```
-
-![Handshake captured](https://github.com/Esther7171/web-development/assets/122229257/e9ec3986-5e54-4bf3-9345-d90fc7057e33)
 
 That is the whole job on site. The `.cap` file now holds the hash. Cracking happens offline, away from the target.
 
