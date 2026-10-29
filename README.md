@@ -110,11 +110,44 @@ sudo apt update
 sudo apt install aircrack-ng hashcat hcxdumptool hcxtools wifite reaver bully hostapd dnsmasq mdk4 macchanger -y
 ```
 
-If you want my adapter-driver setup script:
+### Option A: the setup script
+
+`Documents/install.sh` installs the toolkit above and optionally builds the two common out-of-tree Realtek drivers via DKMS. It is safe to re-run and does not reboot your machine.
 
 ```bash
-git clone https://gitlab.com/deathesther/wifi-hacking-guide && cd wifi-hacking-guide && chmod +x Documents/install.sh && ./Documents/install.sh
+git clone https://gitlab.com/deathesther/wifi-hacking-guide
+cd wifi-hacking-guide
+chmod +x Documents/install.sh
+sudo ./Documents/install.sh
 ```
+
+It installs `build-essential`, `dkms`, and the headers for your running kernel, then asks (y/N) whether to build each driver.
+
+### Option B: build a Realtek driver by hand
+
+If your dual-band adapter's chipset is not supported out of the box, build its driver. These are the two you will meet most often. Install the build prerequisites first:
+
+```bash
+sudo apt install -y git dkms build-essential libelf-dev linux-headers-$(uname -r)
+```
+
+**RTL8812AU / 8821AU / 8814AU** (Alfa AWUS036ACH and many dual-band cards):
+
+```bash
+git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git
+cd rtl8812au
+sudo make dkms_install          # registers with DKMS so it survives kernel updates
+```
+
+**RTL8188FU** (TP-Link TL-WN725N v3 and similar):
+
+```bash
+git clone --depth 1 https://github.com/kelebek333/rtl8188fu.git
+cd rtl8188fu
+sudo ./dkms-install.sh
+```
+
+After either build, **unplug and replug the adapter** (or reboot) so the new driver loads, then confirm it with `lsusb` and `iwconfig`. The in-kernel chipsets in the [adapter table](#recommended-adapters) (Atheros AR9271, MediaTek MT7612U) need none of this.
 
 ## Monitor mode
 <a id="monitor-mode"></a>
