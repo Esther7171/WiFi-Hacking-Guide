@@ -1,0 +1,20 @@
+# GitLab Pages: builds the MkDocs Material site and publishes it to
+# https://deathesther.gitlab.io/wifi-hacking-guide/
+#
+# README.md is the single source. It is copied into docs/ at build time so the
+# repository itself stays a clean single-README project.
+
+pages:
+  stage: deploy
+  image: python:3.12-slim
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - pip install --no-cache-dir "mkdocs-material>=9.5,<10"
+    - mkdir -p docs/assets
+    - cp README.md docs/index.md
+    - cp -r assets/* docs/assets/ 2>/dev/null || true
+    - mkdocs build --site-dir public
+  artifacts:
+    paths:
+      - public
