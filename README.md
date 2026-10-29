@@ -41,7 +41,9 @@ The rest of this guide walks each box in order, starting at [monitor mode](#moni
 20. [Troubleshooting](#troubleshooting)
 21. [Choosing the right attack](#choosing-the-right-attack)
 22. [Where IoT fits in](#where-iot-fits-in)
-23. [Legal and ethics](#legal-and-ethics)
+23. [Wireless pentest checklist](#checklist)
+24. [Common ports reference](#ports)
+25. [Legal and ethics](#legal-and-ethics)
 
 ---
 
@@ -674,6 +676,118 @@ Where to aim, quickly:
 You do not always need a laptop. A NodeMCU the size of a thumb, running on a power bank, can run deauth and beacon attacks on 2.4GHz on its own. I built one to understand that threat from the inside, and it pairs directly with the detection half of this guide.
 
 Full write-up and firmware: [ESP8266 Deauther](https://gitlab.com/deathesther/esp8266-deauther).
+
+## Wireless pentest checklist
+<a id="checklist"></a>
+
+A field checklist for an authorised wireless assessment. Work top to bottom; everything below is in-scope-only and should be logged with timestamps so the blue team can correlate.
+
+### Scope and recon
+- [ ] Inventory APs, clients, IoT, printers, switches. Record MAC, vendor OUI, hostname, and role.
+- [ ] Discover connected devices and note association timestamps.
+- [ ] Identify SSIDs (visible and hidden) and record each one's purpose (corporate, guest, IoT, captive portal).
+- [ ] Confirm whether the same AP serves 2.4GHz and 5GHz; document band assignment and band-steering.
+- [ ] Site survey: AP locations, antenna types, coverage overlap, dead zones, and signal bleed beyond the building.
+- [ ] Look for external USB/PCIe adapters that support monitor mode, and any unfamiliar wireless hardware on endpoints.
+- [ ] Verify encryption: WPA3 preferred; for WPA2 ensure AES/CCMP, TKIP disabled, 802.11w (PMF) active, transition modes sane.
+
+### Authentication and configuration
+- [ ] Router admin restricted to authorised admins; management over HTTPS only, HTTP disabled.
+- [ ] No default passwords; strong complexity enforced; firmware current with vendor hardening applied.
+- [ ] WPS disabled organisation-wide.
+- [ ] Guest / employee / captive-portal networks isolated on separate VLANs, no crossover.
+- [ ] Enterprise 802.1X (PEAP, EAP-TLS, TTLS, FAST) used for corporate where applicable.
+- [ ] RADIUS reviewed: server-cert validity, CA chain, cert pinning. PSK vs 802.1X usage justified and correct EAP types enforced.
+- [ ] Client supplicant behaviour checked: do clients accept insecure EAP types or skip certificate validation?
+- [ ] Rogue connectors hunted (personal APs, phone hotspots, tethering bridging to corporate VLANs); findings logged.
+- [ ] Management and production planes separated; SNMP/SSH/Telnet hardened (SNMPv3 only or removed).
+- [ ] PMF / 802.11w enforced where supported; clients that cannot do it documented.
+- [ ] WEP frames tested for and documented (WEP is deprecated, flag for replacement).
+
+**Recommended key rotation:**
+
+| Key type | NIST basis | Rotation |
+| --- | --- | --- |
+| PTK / GTK (session keys) | Ephemeral, automatic | Per client session / GTK lifetime |
+| Master symmetric key / PSK | SP 800-57 cryptoperiod | <= 1 year; immediately if compromise suspected |
+| RADIUS server keys / certs | Protect master key, rotate per PKI | ~1 year |
+| Client certificates (EAP-TLS) | Per org policy | 1-3 years |
+
+### Authorised WLAN attack and detection tests
+- [ ] **Deauth** test, then confirm the WLC/controller, wireless IDS/IPS, and SIEM recorded it (collect pcaps + logs, correlate timestamps).
+- [ ] **MITM** detection and evidence capture.
+- [ ] **Stress / DoS** (radio or traffic based) in a maintenance window only; document impact and recovery.
+- [ ] **MAC flooding** in a controlled environment to gauge AP/switch stability.
+- [ ] **Fake-auth / association** attempts, verify they are logged and alerted.
+- [ ] Scan for **rogue APs / misconfigured bridges**; document detection and response (avoid active rogue injection unless in scope).
+- [ ] Verify logging retention and SIEM correlation for wireless anomalies (auth failures, BSSID floods, odd association patterns).
+- [ ] Check backend weaknesses: DNS spoofing, unauthorised DHCP, weak DHCP config.
+- [ ] **MAC-spoof detection** test (change host MAC to a known one, verify alerts).
+- [ ] Capture **EAPOL / 4-way handshakes** for in-scope nets; offline strength analysis only if permitted.
+- [ ] Identify legacy/weak auth (e.g. LEAP) from pcap; record the EAP method in use.
+- [ ] Physical security: closets, patch panels, reachable external antennas.
+- [ ] **PMKID** extraction test as an alternative to full handshake capture.
+- [ ] **Spectrum scan** for non-WiFi interference and hidden jammers.
+
+### Legacy WEP injection tests (authorised, lab or in-scope only)
+
+These derive keystream (PRGA) material from captured frames and prove whether injection is possible. WEP only.
+
+```bash
+# Chop-chop: recover a keystream from a single captured packet
+aireplay-ng -4 -b <AP-MAC> -h <source-MAC> <interface>
+
+# Fragmentation: build a PRGA/XOR keystream for injection
+aireplay-ng -5 -b <AP-MAC> -h <source-MAC> <interface>
+
+# Forge an encrypted frame from the recovered PRGA, then inject
+packetforge-ng -0 -a <AP-MAC> -h <your-MAC> -k <dest-IP> -l <source-IP> -y <xor-file> -w <out-file>
+#   -0 ARP request   -a AP MAC   -h your MAC   -k dest IP ("who has")
+#   -l source IP ("tell")   -y PRGA file   -w output file
+```
+
+Document capture evidence, whether monitoring alerted, and any successful injection. Mitigations to confirm alongside: network segmentation + NAC to limit client-to-client traffic, wireless IDS/IPS signatures for rogue APs and ARP/DHCP anomalies, and switch-side DHCP snooping / Dynamic ARP Inspection / IP Source Guard.
+
+## Common ports reference
+<a id="ports"></a>
+
+A quick service-by-port lookup for the wired side you reach once you are on the network (pivoting, and triaging what a captured client talks to).
+
+| Port | Service | Notes |
+| --- | --- | --- |
+| 20 / 21 | FTP | Data / control (cleartext) |
+| 22 | SSH / SCP | Secure shell and copy |
+| 23 | Telnet | Cleartext remote login (flag it) |
+| 25 | SMTP | Mail transfer |
+| 53 | DNS | Name resolution |
+| 69 | TFTP | Trivial FTP (often config files) |
+| 80 | HTTP | Cleartext web |
+| 88 | Kerberos | Network authentication |
+| 110 | POP3 | Mail retrieval |
+| 135 | MS EPMAP | DCE/RPC endpoint mapper |
+| 137 / 139 | NetBIOS | Name / session service |
+| 143 | IMAP4 | Mail access |
+| 443 | HTTPS | TLS web |
+| 445 | SMB | Windows file sharing |
+| 464 | Kerberos | Password change/set |
+| 636 | LDAPS | LDAP over TLS |
+| 989 / 990 | FTPS | FTP over TLS (data / control) |
+| 993 | IMAPS | IMAP over TLS |
+| 995 | POP3S | POP3 over TLS |
+| 1194 | OpenVPN | VPN |
+| 1433 | MSSQL | Microsoft SQL Server |
+| 1521 | Oracle | Oracle DB listener |
+| 2082 / 2083 | cPanel | Admin (plain / SSL) |
+| 2083 | radsec | Secure RADIUS |
+| 3306 | MySQL | MySQL/MariaDB |
+| 3389 | RDP | Remote Desktop |
+| 5432 | PostgreSQL | PostgreSQL DB |
+| 5900 | VNC | Remote framebuffer |
+| 8080 | HTTP-alt | Proxies / web admin |
+| 9100 | PDL / JetDirect | Network printing |
+| 10000 | Webmin | Unix/Linux web admin |
+
+Ports in the 12345 / 27374 / 31337 range are classic trojan/backdoor defaults (NetBus, Sub7, Back Orifice); seeing them on a client is a finding, not a normal service.
 
 ## Legal and ethics
 <a id="legal-and-ethics"></a>
