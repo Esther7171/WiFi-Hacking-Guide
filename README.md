@@ -51,31 +51,44 @@ The rest of this guide walks each box in order, starting at [monitor mode](#moni
 
 **Start here: [Scope and safety boundaries](#scope-and-safety-boundaries).** Every command below assumes written authorization and an in-scope target.
 
+**Foundations**
 1. [Why WiFi testing matters](#why-wifi-testing-matters)
-2. [How a real engagement starts](#how-a-real-engagement-starts)
-3. [What you need: adapter, monitor mode, Linux](#what-you-need)
-4. [Recommended adapters and where to buy](#recommended-adapters)
-5. [Install the tools](#install-the-tools)
-6. [Monitor mode, step by step](#monitor-mode)
-7. [Recon: scan for networks and clients](#recon)
-8. [Lock onto one target](#lock-onto-one-target)
-9. [Capture the WPA/WPA2 handshake](#capture-the-handshake)
-10. [Crack it: aircrack-ng, Hashcat, John](#crack-it)
-11. [WPS attacks: wash, reaver, bully](#wps-attacks)
-12. [The evil twin](#the-evil-twin)
-13. [Automate it: wifite and airgeddon](#automate-it)
-14. [Deauth and denial of service](#deauth-and-denial-of-service)
-15. [mdk4: beacon flood, auth DoS, and stress testing](#mdk4)
-16. [Fake authentication and ARP replay (WEP)](#fake-auth)
-17. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
-18. [How the blue team detects it](#how-the-blue-team-detects-it)
-19. [Hardening and defence](#hardening-and-defence)
-20. [Troubleshooting](#troubleshooting)
-21. [Choosing the right attack](#choosing-the-right-attack)
-22. [Where IoT fits in](#where-iot-fits-in)
-23. [Wireless pentest checklist](#checklist)
-24. [Common ports reference](#ports)
-25. [Legal and ethics](#legal-and-ethics)
+2. [Wireless networking fundamentals](#fundamentals)
+3. [Wi-Fi security protocols](#wifi-security-protocols)
+4. [How a real engagement starts](#how-a-real-engagement-starts)
+
+**Setup**
+5. [What you need: adapter, monitor mode, Linux](#what-you-need)
+6. [Recommended adapters and where to buy](#recommended-adapters)
+7. [Install the tools](#install-the-tools)
+8. [The toolkit, tool by tool (and the aircrack-ng suite)](#toolkit)
+
+**The workflow**
+9. [Monitor mode, step by step](#monitor-mode)
+10. [Recon: scan for networks and clients](#recon)
+11. [Working on 5 GHz and the higher bands](#five-ghz)
+12. [Lock onto one target](#lock-onto-one-target)
+13. [Capture the WPA/WPA2 handshake](#capture-the-handshake)
+14. [Crack it: aircrack-ng, Hashcat, John](#crack-it)
+15. [WPS attacks: wash, reaver, bully](#wps-attacks)
+16. [The evil twin](#the-evil-twin)
+17. [Automate it: wifite and airgeddon](#automate-it)
+18. [Deauth and denial of service](#deauth-and-denial-of-service)
+19. [mdk4: beacon flood, auth DoS, and stress testing](#mdk4)
+20. [Fake authentication and ARP replay (WEP)](#fake-auth)
+21. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
+
+**Defence and reporting**
+22. [How the blue team detects it](#how-the-blue-team-detects-it)
+23. [Hardening and defence](#hardening-and-defence)
+24. [Troubleshooting](#troubleshooting)
+25. [Choosing the right attack](#choosing-the-right-attack)
+26. [Where IoT fits in](#where-iot-fits-in)
+27. [Wireless pentest checklist](#checklist)
+28. [Common ports reference](#ports)
+29. [Professional reporting](#reporting)
+30. [References and further learning](#references)
+31. [Legal and ethics](#legal-and-ethics)
 
 ---
 
@@ -168,6 +181,20 @@ A company brings me in to test their office WiFi. Before anything else we agree 
 
 On site, the company typically says something like "here is our guest SSID and our corporate SSID, see if you can get onto the corporate one or capture a password." From there I map what is in the air, pick the in-scope target, capture a handshake, take it away to crack offline, and if evil twin is in scope I test whether staff devices will trust a lookalike network. At the end I write up what worked, what the password strength was, whether PMF was on, and whether their monitoring saw me. Everything below is that workflow.
 
+The assessment follows the same lifecycle every time, and it does not end at the crack. It ends at a retest that confirms the fix worked.
+
+```mermaid
+flowchart LR
+    A[Scope and<br/>authorisation] --> B[Recon]
+    B --> C[Attack<br/>in scope]
+    C --> D[Defence<br/>and detection]
+    D --> E[Report]
+    E --> F[Remediate]
+    F --> G[Retest]
+    G -->|finding not closed| C
+    G -->|closed| H[Engagement complete]
+```
+
 ## What you need
 <a id="what-you-need"></a>
 
@@ -254,6 +281,87 @@ sudo ./dkms-install.sh
 
 After either build, **unplug and replug the adapter** (or reboot) so the new driver loads, then confirm it with `lsusb` and `iwconfig`. The in-kernel chipsets in the [adapter table](#recommended-adapters) (Atheros AR9271, MediaTek MT7612U) need none of this.
 
+## The toolkit, tool by tool
+<a id="toolkit"></a>
+
+Before the workflow, here is what each tool in the kit is actually for, how you get it, and where its limits are. I have grouped them by the job they do on an engagement. Everything marked **apt** ships in Kali or installs with `sudo apt install`; a few of the Enterprise tools are a `git clone` because they are not packaged.
+
+### Recon and monitoring
+| Tool | Role | Install | Notes and limits |
+| --- | --- | --- | --- |
+| `iw` / `iwconfig` / `iwlist` | Query and set the wireless interface (mode, channel, scan) | apt (`iw`, `wireless-tools`) | `iw` is the modern tool; `iwconfig`/`iwlist` are legacy but still handy for a quick `iwlist scan` in managed mode |
+| `airodump-ng` | Live AP and client discovery, handshake capture | apt (aircrack-ng) | 2.4 GHz only unless you pass `--band abg`; see the [aircrack-ng suite](#aircrack-suite) |
+| `kismet` | Passive wireless IDS and long-run survey, logs every device it hears | apt | Great for detection and mapping, not for injection. Web UI on `:2501`. Honest limitation: single-adapter coverage is only the channels it hops |
+| `wavemon` | ncurses live signal/noise meter for one link | apt | Managed-mode link quality only, useful for aiming antennas, not for attack |
+| `bettercap` | Modular network attack framework with a `wifi` module (recon, deauth, handshake capture) | apt | Powerful and scriptable (caplets); its 802.11 features need a capable adapter and overlap with the aircrack suite. Lab-only for the disruptive bits |
+
+### Capture and crack
+| Tool | Role | Install | Notes and limits |
+| --- | --- | --- | --- |
+| `hcxdumptool` | Capture PMKID and EAPOL directly, often with no client | apt (hcxdumptool) | Modern replacement for client-dependent capture; respects a filter list so you stay in scope |
+| `hcxtools` (`hcxpcapngtool`) | Convert captures to hashcat's 22000 format | apt | `hcxpcaptool` and mode 16800 are legacy; use `hcxpcapngtool` and 22000 |
+| `hashcat` | GPU password recovery (mode 22000 for WPA, 5500 for MSCHAPv2) | apt | The real workhorse. Needs a capable GPU for speed; CPU works but is slow |
+| `aircrack-ng` | CPU dictionary attack against a capture, quick WEP cracking | apt | Fine for a fast check or weak keys; hashcat is faster for anything serious |
+| `john` (John the Ripper) | Alternative cracker, flexible rules | apt | Overlaps hashcat; useful where you already know John's rule syntax |
+| `cewl` / `cupp` / `crunch` | Build targeted wordlists (site scrape / profile / pattern) | apt (`cewl`, `crunch`); cupp via git | A targeted list beats a generic one; this step, not the attack, usually decides a WPA2-PSK result |
+
+### Rogue AP, evil twin, Enterprise
+| Tool | Role | Install | Notes and limits |
+| --- | --- | --- | --- |
+| `airbase-ng` | Stand up a basic rogue/evil-twin AP | apt (aircrack-ng) | Simple and scriptable; see [the evil twin](#the-evil-twin). Lab only |
+| `hostapd` | Full-featured software AP | apt | The building block real APs and lab rigs use |
+| `hostapd-wpe` | hostapd patched to impersonate a RADIUS server and log credentials | git / Kali pkg | Enterprise impersonation, [lab only](#wpa2-enterprise); captures MSCHAPv2 for offline cracking |
+| `eaphammer` | Turnkey Enterprise evil twin (rogue AP + RADIUS + cred capture) | git clone | Automates the hostapd-wpe flow; needs `--cert-wizard` once. Lab only, name it in the RoE |
+| `dnsmasq` | DHCP and DNS for a rogue AP so clients get an address | apt | Pair with a bridge; misconfigure and you can hand addresses to real clients, so lab only |
+| `freeradius` | Real RADIUS server, for building an Enterprise test bed you own | apt | Use it to stand up a legitimate 802.1X lab to practise against |
+| `crEAP` / `eapeak` | Identify EAP methods and harvest outer identities from the air or a pcap | git clone | Passive, read-only; good first step on Enterprise before any impersonation |
+| `asleap` | Crack captured MSCHAPv2 challenge/response | apt | Pairs with hostapd-wpe/eaphammer output; `hashcat -m 5500` does the same |
+| `air-hammer` | Horizontal 802.1X password spray | git clone | Keep attempt counts low so real staff are not locked out; in-scope only |
+
+### Disruption and stress (lab only)
+| Tool | Role | Install | Notes and limits |
+| --- | --- | --- | --- |
+| `aireplay-ng` | Inject specific frames (deauth, fakeauth, arpreplay, test) | apt (aircrack-ng) | Precise single-purpose injection; see the [deauth section](#deauth-and-denial-of-service) |
+| `mdk4` | All-round 802.11 stress tool, ten attack modes | apt | Broad disruption; [lab only](#mdk4). Successor to mdk3 |
+| `macchanger` | Change or randomise your adapter MAC | apt | For MAC-spoof detection tests and privacy during a test |
+
+### Analysis
+| Tool | Role | Install | Notes and limits |
+| --- | --- | --- | --- |
+| `wireshark` / `tshark` | Decode and filter captured frames (GUI / CLI) | apt | The reference analyser; `tshark` scripts the same filters. Reads radiotap and 802.11 management frames |
+| `tcpdump` | Lightweight capture to a pcap for later analysis | apt | No decode UI, but everywhere and tiny |
+| `scapy` | Python library to craft, send, and dissect arbitrary frames | apt (`python3-scapy`) | For custom probes and detection scripts when a canned tool does not fit; you write the logic |
+| `wifite` / `airgeddon` | Menu-driven wrappers over the whole suite | apt | Fast once you know the manual flow; an automated tool you cannot debug is useless when it misbehaves. See [automate it](#automate-it) |
+
+### The aircrack-ng suite, utility by utility
+<a id="aircrack-suite"></a>
+
+Most of the workflow above runs on the aircrack-ng suite, which is not one program but a set of focused utilities. Here is the whole set and what each one is for, so a reference in a command makes sense. The ones in **bold** are the ones you use on almost every engagement; the rest are situational or legacy (mostly WEP-era).
+
+| Utility | What it does | When you reach for it |
+| --- | --- | --- |
+| **`airmon-ng`** | Enable/disable monitor mode, kill interfering processes | Start of every session (`airmon-ng check kill`, `start wlan0`) |
+| **`airodump-ng`** | Capture frames, list APs/clients, save handshakes | Recon and handshake capture, constantly |
+| **`aireplay-ng`** | Inject frames: deauth, fakeauth, arpreplay, test | Force a reconnect, test injection, WEP replay |
+| **`aircrack-ng`** | Crack WEP (statistical) and WPA/WPA2 (dictionary) | Quick CPU crack of a capture |
+| `airbase-ng` | Act as a rogue/evil-twin AP | Evil twin and client-trust tests (lab only) |
+| `airdecap-ng` | Decrypt a WEP/WPA capture once you have the key | Prove impact: decrypt the traffic you captured |
+| `airdecloak-ng` | Remove WEP cloaking from a capture | Rare, cleaning a WEP capture |
+| `airolib-ng` | Precompute and store PMKs per ESSID for faster WPA cracking | Speed up repeated WPA2-PSK cracks on one ESSID |
+| `airserv-ng` | Share one wireless card over TCP to other tools | Run the card on one host, tools on another |
+| `airtun-ng` | Virtual tunnel interface for injecting/monitoring decrypted traffic | Inject into or observe a decrypted stream |
+| `packetforge-ng` | Forge custom (usually ARP) encrypted frames | WEP fragmentation/chop-chop injection |
+| `ivstools` | Merge/convert `.ivs` files | WEP IV handling |
+| `makeivs-ng` | Generate a test `.ivs` file | Lab testing of the WEP tooling |
+| `wesside-ng` | Automated all-in-one WEP key recovery | Legacy WEP demo only |
+| `easside-ng` | Talk to an AP without the WEP key via a helper | Legacy WEP, rare |
+| `buddy-ng` | Helper daemon for easside-ng | Only with easside-ng |
+| `tkiptun-ng` | Proof-of-concept WPA-TKIP attack | Demonstrating that TKIP is broken, legacy |
+| `airdecloak-ng` | WEP decloaking (see above) | Legacy |
+| `airventriloquist-ng` | Inject content into an encrypted session | Advanced/experimental |
+
+The practical core is the four in bold. Most of the rest exist for WEP, which you will rarely meet outside a lab, but they are worth recognising when you see them referenced.
+
 ## Monitor mode
 <a id="monitor-mode"></a>
 
@@ -309,6 +417,23 @@ A healthy adapter reports APs responding and a percentage of injected packets ge
 ## Recon
 <a id="recon"></a>
 
+Recon is a loop: sweep both bands, read the security of each network, and only then narrow to one in-scope target. The path from "what is in the air" to "what do I attack" branches on the protocol you find.
+
+```mermaid
+flowchart TD
+    A[Monitor mode up] --> B[Sweep 2.4 and 5 GHz<br/>airodump-ng --band abg]
+    B --> C{In scope?}
+    C -->|No| B
+    C -->|Yes| D{Security?}
+    D -->|Open / OWE| E[Client-trust / evil-twin test]
+    D -->|WEP| F[Legacy WEP path, flag for replacement]
+    D -->|WPA2-PSK| G[Lock on, capture handshake or PMKID]
+    D -->|WPA2/3-Enterprise| H[802.1X: identify EAP, cert-validation test]
+    D -->|WPA3-only + PMF| I[No crack: check transition mode, WPS, client trust]
+    G --> J[Crack offline]
+    H --> J
+```
+
 List everything in the air:
 
 ```bash
@@ -344,6 +469,50 @@ What the columns mean:
 - The lower pane lists **STATION**s, the client devices connected to each AP
 
 `iwlist wlan0 scan` gives similar information in managed mode if you just want a quick look without going full monitor.
+
+## Working on 5 GHz and the higher bands
+<a id="five-ghz"></a>
+
+Most guides stop at 2.4 GHz because the cheapest adapters do. On a real corporate test that is a gap: the sensitive networks increasingly live on 5 GHz (and now 6 GHz), and missing them means missing the networks that matter. The attacks are the same; what changes is the spectrum, the hardware, and one regulatory rule that will quietly break your capture if you do not know about it.
+
+```mermaid
+flowchart LR
+    subgraph B24["2.4 GHz"]
+      direction TB
+      N1["non-overlapping: 1, 6, 11"]
+    end
+    subgraph B5["5 GHz (UNII)"]
+      direction TB
+      U1["UNII-1 (36-48)<br/>indoor, no DFS"]
+      U2["UNII-2 / 2e (52-144)<br/>DFS: radar-shared"]
+      U3["UNII-3 (149-165)<br/>higher power"]
+    end
+    subgraph B6["6 GHz"]
+      direction TB
+      S6["WiFi 6E/7<br/>newest, least congested"]
+    end
+    B24 --> B5 --> B6
+```
+
+**Sweep the higher band.** airodump defaults to 2.4 GHz. Add `--band abg` to cover everything, or `--band a` for 5 GHz alone:
+
+```bash
+sudo airodump-ng wlan0mon --band a          # 5 GHz only
+sudo airodump-ng wlan0mon --band abg        # 2.4 and 5 GHz together
+```
+
+**You need 5 GHz-capable hardware.** A 2.4 GHz-only adapter (the AR9271 classic) simply cannot see or touch these networks. Use a dual-band chipset from the [adapter table](#recommended-adapters): the MediaTek MT7612U (AWUS036ACM) is the clean in-kernel choice.
+
+**DFS is the rule that catches people out.** Large parts of 5 GHz (UNII-2 and 2e, roughly channels 52 to 144) are shared with weather and military radar, under Dynamic Frequency Selection. Two consequences on a test:
+
+- Many client adapters will **not transmit** on DFS channels at all, and some will not even passively capture well there. If your target AP sits on channel 100 and your capture is empty, the adapter, not the attack, is usually why.
+- An AP on a DFS channel must vacate it for 30 seconds if it thinks it hears radar. A deauth/evil-twin test can look like it failed when the AP simply moved channel. Confirm the channel before you conclude anything.
+
+**Channel width matters for lock-on.** 5 GHz commonly runs 80 MHz (and 160 MHz on WiFi 6). When you pin airodump to a target, pin the **primary/control channel** the AP advertises, not a secondary one, or you will sit on the wrong frequency and catch nothing.
+
+**6 GHz (WiFi 6E/7)** is newest and least congested, and uses OWE/WPA3 by design. Tooling and adapter support on Linux still lags, so treat 6 GHz capture as hardware-dependent and test your kit in a lab before relying on it in the field. Do not claim 6 GHz coverage in a report you could not actually perform.
+
+The checklist for this band lives at [`checklists/five-ghz-assessment.md`](checklists/five-ghz-assessment.md).
 
 ## Lock onto one target
 <a id="lock-onto-one-target"></a>
@@ -571,6 +740,20 @@ Use these to move fast, but only after you can do it by hand. An automated tool 
 
 A deauthentication frame tells a client it has been disconnected. Deauth frames are a normal, required part of 802.11, and before WPA3 they are unprotected, so any device that has seen the AP and client addresses can forge one.
 
+```mermaid
+sequenceDiagram
+    participant AT as Attacker (monitor mode)
+    participant C as Client
+    participant AP as Access point
+    Note over AT: Has seen AP BSSID and client MAC from recon
+    AT->>C: Forged deauth (spoofed as from the AP)
+    Note over C: Believes the AP dropped it
+    C--xAP: Disconnects
+    C->>AP: Reassociates (four-way handshake)
+    Note over AT: A short burst captures the handshake.<br/>Sent continuously, the same frame is a denial of service.
+    Note over AP: With 802.11w / PMF on, the forged deauth is ignored and nothing happens
+```
+
 Used in short, targeted bursts to force a reconnect, deauth is a legitimate capture step, and that is covered above. Sent **continuously**, the same frame becomes a **denial-of-service attack**: it keeps a network or a client offline for as long as it runs.
 
 > **Lab only, and here is why.** The commands below will knock real devices off a real network. Run them only against an AP **you own** or that is **explicitly in scope**, in a lab or an isolated test SSID. Sustained jamming is specifically illegal (see the [legal section](#legal-and-ethics)), and it is almost never in scope on a real engagement, because taking a client offline during business hours is exactly what they pay you not to do. The value of knowing these is the **detection** half in the [next section](#how-the-blue-team-detects-it): you run it briefly in a lab to generate the signature, then prove the blue team can see it.
@@ -588,6 +771,19 @@ Reference: the official [aireplay-ng documentation](https://www.aircrack-ng.org/
 <a id="mdk4"></a>
 
 Where aireplay-ng does one thing (inject specific frames), **mdk4** is the all-round 802.11 stress tool. It is the successor to mdk3, ships in Kali, and exposes ten attack modes. It needs a card already in [monitor mode](#monitor-mode).
+
+**aireplay-ng vs mdk4, when to use which:**
+
+| | `aireplay-ng` | `mdk4` |
+| --- | --- | --- |
+| Design | Precise, single-frame injection | Broad, high-volume stress tool |
+| Deauth | Targeted, bounded (`--deauth 10`) to capture a handshake | Flood mode (`d`), sustained, from a blacklist |
+| Breadth | Deauth, fakeauth, arpreplay, injection test | Ten modes: beacon flood, auth DoS, probe, deauth, EAPOL, TKIP, mesh, WIDS confusion, fuzzer, PoC |
+| Typical use | The capture step (reconnect nudge), WEP replay | Generating a loud signature to prove the blue team can detect it |
+| Blast radius | Low when scoped to one client | High: easy to disrupt more than you intended |
+| Defeated by PMF | Yes (forged deauth ignored) | Yes for the management-frame modes (`a`, `d`, `e`) |
+
+The short version: reach for **aireplay-ng** when you want one thing to happen to one client, and for **mdk4** only when the goal is a detection exercise in a lab you control. For the capture step, aireplay-ng's bounded deauth is almost always the right tool.
 
 > **Lab only.** Every command here disrupts a real network. Run them only against an AP you own or that is explicitly in scope, briefly, to generate a signature you then detect. See the [lab-only warning above](#deauth-and-denial-of-service) and the [legal section](#legal-and-ethics).
 
@@ -807,7 +1003,24 @@ The signatures of an attack in progress:
 3. Repeated EAPOL handshakes in a short time (someone is capturing)
 4. Dozens of new SSIDs appearing at once (beacon flood), or two APs with the same ESSID but different BSSIDs (evil twin)
 
-A proper wireless IDS such as **Kismet** or **nzyme** alerts on all of this automatically. The point of the test is to check the client has one, and that someone reads it.
+Mapping a signature to a response is the triage a SOC should be able to run. This is the flow to hand them, and the flow to test against during the engagement:
+
+```mermaid
+flowchart TD
+    S[Wireless anomaly alert] --> Q{What is the pattern?}
+    Q -->|Deauth/disassoc burst| D[Likely handshake capture or DoS]
+    Q -->|Clients flapping + EAPOL repeats| C[Likely active capture in progress]
+    Q -->|Many new SSIDs at once| B[Beacon flood / scanner noise]
+    Q -->|Duplicate ESSID, new BSSID| E[Possible evil twin]
+    D --> R{Known maintenance<br/>or authorised test?}
+    C --> R
+    B --> R
+    E --> R
+    R -->|Yes| L[Log and correlate with the test window]
+    R -->|No| I[Investigate: locate source, capture pcap,<br/>check if PMF would have stopped it, escalate]
+```
+
+A proper wireless IDS such as **Kismet** or **nzyme** alerts on all of this automatically. The point of the test is to check the client has one, that its alerts reach a human, and that the human knows this flow. An alert nobody triages is the same as no alert, and proving that gap is often the most useful finding in the report.
 
 ## Hardening and defence
 <a id="hardening-and-defence"></a>
@@ -976,6 +1189,39 @@ A quick service-by-port lookup for the wired side you reach once you are on the 
 | 10000 | Webmin | Unix/Linux web admin |
 
 Ports in the 12345 / 27374 / 31337 range are classic trojan/backdoor defaults (NetBus, Sub7, Back Orifice); seeing them on a client is a finding, not a normal service.
+
+## Professional reporting
+<a id="reporting"></a>
+
+The report is the deliverable, not the crack. A client pays for a document their team can act on, not for proof that you are clever. A wireless report that lands well does three things: it tells a manager the overall posture in plain language, it gives an engineer a specific, testable fix for each issue, and it keeps evidence redacted so it can be shared safely.
+
+**Use the template.** A complete, reusable report template lives at [`checklists/final-report-template.md`](checklists/final-report-template.md). Copy it per engagement. It covers the executive summary, scope and methodology, the severity scale, the per-finding block, retesting, and appendices, with a worked sample finding.
+
+**The structure in brief:**
+
+1. **Executive summary.** One to three paragraphs for a non-technical reader: what was assessed, over what window, the overall posture, and a count of findings by severity. No jargon.
+2. **Scope and methodology.** The signed authorisation, what was in and out of scope, the test window, constraints (adapter limits, DFS gaps), and the approach. State plainly that impersonation testing used lab-only labelled SSIDs and synthetic identities.
+3. **Findings.** One block each: ID, title, severity, affected asset, description, root cause, redacted evidence, expected vs actual result, business impact, and a specific remediation. Tie every finding to a fix.
+4. **Retesting.** A finding is only closed when a retest confirms the secure result. Record anything that could not be retested, with the reason, so residual risk is explicit.
+
+**Severity, consistently applied:**
+
+| Severity | Rough meaning for a wireless finding |
+| --- | --- |
+| Critical | Readily exploitable, direct path to sensitive access (for example, Enterprise creds captured and cracked, no cert validation) |
+| High | Likely exploitable with some effort or a condition (validation off but crack unfinished in the window; WPS enabled on a weak PSK) |
+| Medium | Moderate impact or a less likely combination (usernames leak but validation enforced; TKIP still offered) |
+| Low | Minor, limited impact (informational hygiene gaps, cosmetic misconfig) |
+| Informational | Not a weakness; worth noting, including good posture worth documenting (strict WPA3-only with PMF and no WPS) |
+
+**Write-up principles that keep a report credible:**
+
+- **Report what you actually did.** If an adapter could not reach a DFS channel or a 6 GHz network, say so as a coverage limitation. Never imply testing you did not perform.
+- **Redact evidence.** Mask passwords, trim captures to the proof you need, and store the originals encrypted until the report is accepted, then destroy them and say so.
+- **Document good posture too.** "Clients correctly refuse the rogue RADIUS cert" is a real, valuable result. A report that is all red loses trust; an honest one that confirms what works is more useful.
+- **Make every remediation testable.** "Enforce RADIUS cert validation via GPO/MDM against CN radius.corp.local" beats "improve security". The retest depends on it.
+
+The Enterprise section has a ready-to-use per-finding [reporting block](#wpa2-enterprise) tuned for 802.1X results, and the [`checklists/`](checklists/) directory maps each assessment area to the evidence you should have collected to write these findings.
 
 ## References and further learning
 <a id="references"></a>

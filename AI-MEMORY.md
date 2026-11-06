@@ -3,15 +3,20 @@
 _For the AI assistant (Claude). Read on fresh clone to restore context._
 
 ## What this repo is
-A WiFi pentesting / hacking guide (owner's notes + steps). Owner: deathesther.
+A wireless penetration testing handbook (owner's lab notes, full workflow, and defensive guidance). Single source of truth is `README.md`; the MkDocs Material site is built from it at CI time. Owner: deathesther.
 
 ## State & plan
-- Currently private on GitLab as `wifi-hacking-guide`.
-- Owner's intent (deferred, do when asked): rename to **wifi-pentesting-guide** and make it **public / open-source** (this is the one repo meant to be public; everything else stays private).
+- Lives on both remotes: `origin` = GitLab (deathesther/wifi-hacking-guide), `github` = GitHub (Esther7171/WiFi-Hacking-Guide). Keep both in sync.
+- Name kept as `wifi-hacking-guide` deliberately (discoverability). Do NOT rename to a "pentesting" slug unless the owner asks again in the current message.
+- MkDocs Material site (`mkdocs.yml`, `.gitlab-ci.yml`) renders Mermaid via pymdownx.superfences custom_fences.
+- `checklists/` holds eight printable per-area assessment checklists.
+- Social preview card points at `github.com/Esther7171/WiFi-Hacking-Guide`.
 
 ## How to continue
-Pull from GitLab. Markdown guide, no build step.
+Pull from GitLab or GitHub. Markdown guide plus MkDocs. No application build step; the CI job copies README.md to docs/index.md.
 
 ## Constraints
-- Commits authored only as **deathesther**, never add any Claude co-author line.
-- GitHub (Esther7171) is banned; lives on **GitLab (deathesther/wifi-hacking-guide)**.
+- Commits authored only as **deathesther**, never add any Claude co-author / attribution line.
+- Never use em dashes anywhere. Use hyphens, colons, periods, or parentheses.
+- Do NOT push to any remote automatically. Commit locally only; push to BOTH GitHub and GitLab only when the owner explicitly says to push in the current message.
+- Content stays safety-first: lab-only framing for anything disruptive, no fabricated hardware/test results, no credential-harvesting or sustained-DoS recipes aimed at production.
