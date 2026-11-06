@@ -1,13 +1,13 @@
 # WiFi Hacking and Penetration Testing Guide
 
-A hands-on WiFi hacking and penetration testing guide, written from my own lab notes. It walks the full wireless workflow the way I run it on an authorised engagement: recon, monitor mode, capturing a WPA/WPA2 handshake, cracking it offline, WPS, the evil twin, and just as importantly how a blue team detects and shuts all of this down.
+Hands-on WiFi penetration testing from my lab notes: recon, monitor mode, WPA/WPA2 handshake capture and offline cracking, WPS, evil twin, mdk4, and how a blue team detects and stops each one.
 
-> **Read this first.** Everything here is for networks you own or have **written permission** to test, and for learning in a lab you control. Attacking or jamming WiFi you do not own is illegal almost everywhere. See the [legal section](#legal-and-ethics) at the end. This guide exists so defenders understand the attack, not so anyone runs it on strangers.
+> **Read this first.** For networks you own or have **written permission** to test, in a lab you control. Attacking or jamming WiFi you do not own is illegal almost everywhere (see [legal](#legal-and-ethics)). This exists so defenders understand the attack.
 
 ## Scope and safety boundaries
 <a id="scope-and-safety-boundaries"></a>
 
-Wireless attacks reach past the building wall, into the car park and the floor above, so the single most important control on a test is staying inside an agreed scope. Read this before you put a card into monitor mode. It is the frame for every command in this guide.
+Wireless reaches past the building wall, so staying in an agreed scope is the control that matters most. Read this before monitor mode.
 
 ### Authorization comes first
 - Do nothing until a signed authorization (a rules-of-engagement document) is in place. That signature is the only thing that separates a penetration test from a crime.
@@ -19,19 +19,19 @@ Wireless attacks reach past the building wall, into the car park and the floor a
 - Capture only what the test needs. Minimise collection, and never read, store, or exfiltrate a third party's traffic.
 
 ### Hard boundaries, do not cross these
-- **No sustained denial of service.** Deauthentication floods, beacon floods, authentication floods, and jamming are run in an isolated lab or an agreed maintenance window only, briefly, to produce a detection signature you then show the blue team. They are almost never in scope against production, because an outage during business hours is exactly what the client pays you to prevent.
-- **No harvesting real credentials outside the rules of engagement.** RADIUS impersonation and evil twin tests capture authentication material. Run them only when the authorization names them explicitly, against test identities and clearly labelled lab-only SSIDs, never a live corporate SSID that staff will join by habit.
-- **No targeting people.** This guide is about a network's configuration, not any individual's device or personal data.
+- **No sustained denial of service.** Deauth/beacon/auth floods and jamming: isolated lab or agreed maintenance window only, briefly, to produce a detection signature. Almost never in scope against production.
+- **No harvesting real credentials outside the RoE.** Run RADIUS/evil-twin tests only when the authorization names them, against test identities and labelled lab-only SSIDs, never a live corporate SSID.
+- **No targeting people.** This is about a network's configuration, not any individual's device or data.
 
 ### Handle captured data carefully
-- Store captures and any credential material encrypted, on as few machines as possible.
-- Redact evidence in the report: mask passwords, and trim captures to the proof you actually need.
+- Store captures and credentials encrypted, on as few machines as possible.
+- Redact the report: mask passwords, trim captures to the proof you need.
 - Destroy captured secrets once the report is accepted, and record that you did.
 
 ### If something breaks, stop
-- If a test causes an unplanned outage or any unexpected effect, stop immediately and call the named contact. A quick phone call always beats pressing on.
+- Unplanned outage or any unexpected effect: stop and call the named contact. A phone call beats pressing on.
 
-Throughout this guide, any step that can disrupt a network or capture authentication material is marked **lab only** and is written to be demonstrated against hardware you own or an isolated test SSID, using synthetic or supplied captures. The full legal position, including India-specific and international law, is in the [legal and ethics](#legal-and-ethics) section at the end.
+Any disruptive or credential-capturing step is marked **lab only**: demo it against hardware you own or an isolated test SSID. Full legal position in [legal and ethics](#legal-and-ethics).
 
 ## The whole procedure at a glance
 
@@ -39,13 +39,11 @@ Throughout this guide, any step that can disrupt a network or capture authentica
   <img src="assets/wifi-testing-procedure.png" alt="WiFi penetration test full procedure: prepare, attack in scope, defend and report" width="900">
 </div>
 
-A wireless assessment runs in three phases, and every attack step has a matching defence step. That pairing is the whole point: you run the attack to prove the gap, then you tell the client how to detect and close it.
+Three phases, and every attack step has a matching defence step: prove the gap, then show how to detect and close it.
 
-1. **Prepare.** Get a **signed scope and rules-of-engagement**, then put a monitor-mode adapter on the air. No signature, no test.
-2. **Attack (in scope only).** Recon both bands, lock onto one in-scope target, capture the WPA/WPA2 handshake or PMKID, and crack it **offline**. Optional in-scope paths are WPS brute force, an evil twin to test client trust, and deauth/[mdk4](#mdk4) which is a lab-only denial-of-service.
-3. **Defend and report.** Show how the blue team detects each attack (IDS, `tshark` on management frames), what hardening kills it (802.11w/PMF, WPA3, WPS off), and write it all up. The report is the deliverable, not the crack.
-
-The rest of this guide walks each box in order, starting at [monitor mode](#monitor-mode).
+1. **Prepare.** Signed scope and rules-of-engagement, then a monitor-mode adapter on the air. No signature, no test.
+2. **Attack (in scope only).** Recon both bands, lock one target, capture the WPA/WPA2 handshake or PMKID, crack it **offline**. Optional: WPS brute force, evil twin, deauth/[mdk4](#mdk4) (lab-only DoS).
+3. **Defend and report.** Show detection (IDS, `tshark` on management frames) and hardening (802.11w/PMF, WPA3, WPS off), and write it up. The report is the deliverable, not the crack.
 
 ## Contents
 
@@ -96,9 +94,7 @@ The rest of this guide walks each box in order, starting at [monitor mode](#moni
 ## Why WiFi testing matters
 <a id="why-wifi-testing-matters"></a>
 
-WiFi is the soft edge of almost every corporate network. A firewall watches the wire, but the radio leaks out of the building and into the car park, the café next door, the floor above. If an attacker can sit outside with an antenna and reach the signal, the whole perimeter argument changes. That is why wireless is a standard part of a full network penetration test: the access point is a door that opens into the internal network, and most people never check whether it is locked.
-
-I test WiFi to answer three questions for a client. Can someone capture and crack the WiFi password from outside? Can they stand up a fake copy of the network and trick staff onto it? And if they try either, will anyone notice? The first two are the attack. The third is the part that actually earns the report.
+WiFi is the soft edge of the network: the radio leaks past the wall into the car park and the floor above, so the AP is a door into the internal network that nobody checks is locked. A test answers three questions: can someone capture and crack the password from outside, can they stand up a fake copy and trick staff onto it, and will anyone notice. The first two are the attack; the third earns the report.
 
 ## Wireless networking fundamentals
 <a id="fundamentals"></a>
@@ -133,7 +129,7 @@ flowchart TB
 ## Wi-Fi security protocols
 <a id="wifi-security-protocols"></a>
 
-Before any tooling, know what you are up against. The protocol a network runs decides which attacks are even possible, so identifying it correctly in [recon](#recon) is half the job. Here is the landscape, oldest to newest.
+The protocol a network runs decides which attacks are possible, so identifying it in [recon](#recon) is half the job. Oldest to newest:
 
 | Protocol | Status | Encryption | Authentication | The weakness you test for |
 | --- | --- | --- | --- | --- |
@@ -156,33 +152,29 @@ Before any tooling, know what you are up against. The protocol a network runs de
 - **RADIUS** the back-end server that actually checks Enterprise credentials, usually tied to Active Directory.
 - **PMF / 802.11w** (Protected Management Frames) signs management frames so forged deauths are ignored. Optional on WPA2, mandatory on WPA3. This one setting kills the deauth attack.
 
-### What changed with WPA3, and how you actually test it
+### Testing WPA3
 
-WPA3 closes the two attacks this guide leans on hardest, so it needs its own approach rather than the WPA2 playbook.
+WPA3 kills the two attacks this guide leans on hardest:
 
-- **Offline cracking is dead against SAE.** There is no capture you can take away and grind against rockyou. On a WPA3-Personal network the password-strength story stops being the finding.
-- **Deauth is dead where PMF is on.** WPA3 mandates PMF, so forged deauthentication frames are ignored. No forced reconnect, no easy handshake.
+- **Offline cracking is dead against SAE.** No capture to grind against rockyou; password strength stops being the finding.
+- **Deauth is dead where PMF is on.** WPA3 mandates PMF, so forged deauths are ignored.
 
-That leaves a smaller, more specific set of things to check:
+So on WPA3 you check a smaller set:
 
-1. **Transition-mode downgrade.** Most deployments run **WPA3-transition** (also called mixed mode), where the same SSID still accepts WPA2 for old devices. If it does, you capture a WPA2 handshake the ordinary way and the WPA3 upgrade bought nothing. Confirming whether the network is WPA3-only or transition is the single most useful WPA3 finding.
-2. **Dragonblood (2019).** The original SAE implementations had timing and cache side-channel leaks and downgrade paths (CVE-2019-9494 and related). Most vendors have patched them, so in practice you note the patch level and firmware age rather than expecting a live crack.
-3. **WPS is still WPS.** If WPS is enabled, the SAE upgrade is moot: the PIN path does not care which handshake the network uses.
-4. **Client trust still applies.** Evil twin and, for open networks, **OWE** spoofing still work, because neither OWE nor a careless client verifies the AP's identity. This is where WPA3 testing usually ends up.
-5. **Enterprise is unchanged in spirit.** WPA3-Enterprise still rises or falls on whether clients validate the RADIUS certificate, exactly as in [the Enterprise section](#wpa2-enterprise).
+1. **Transition-mode downgrade.** Most run **WPA3-transition** (mixed mode), still accepting WPA2 for old devices. If so, capture the WPA2 handshake as usual. Confirming WPA3-only vs transition is the most useful WPA3 finding.
+2. **Dragonblood (2019).** Early SAE had side-channel and downgrade bugs (CVE-2019-9494). Mostly patched, so note patch level and firmware age.
+3. **WPS is still WPS.** If WPS is on, the SAE upgrade is moot.
+4. **Client trust still applies.** Evil twin and OWE spoofing still work; nothing verifies the AP identity. This is usually where WPA3 testing lands.
+5. **Enterprise is unchanged.** Still rises or falls on RADIUS cert validation (see [Enterprise](#wpa2-enterprise)).
 
-The practical read: when you meet WPA3, your first question is not "how do I crack it" but "is it really WPA3-only, and does it still expose WPS or a trusting client". If it is strict WPA3-only with PMF and no WPS, that is a strong posture, and saying so clearly is a legitimate, valuable result in the report.
+First question on WPA3 is not "how do I crack it" but "is it really WPA3-only, and does it expose WPS or a trusting client". Strict WPA3-only + PMF + no WPS is a strong posture: say so in the report.
 
 ## How a real engagement starts
 <a id="how-a-real-engagement-starts"></a>
 
-A wireless test does not start with a laptop. It starts with paperwork. Here is roughly how it goes.
+A test starts with paperwork, not a laptop. Agree **scope** in writing (which SSIDs/BSSIDs, location, test window, what is off-limits: usually no outages in business hours, no touching the neighbour's network), and get it signed. That signature is the only thing separating a pentest from a crime.
 
-A company brings me in to test their office WiFi. Before anything else we agree **scope** in writing: which SSIDs and BSSIDs I am allowed to touch, the physical location, the test window, and what I am not allowed to do (usually: no sustained outages during business hours, no touching the neighbour's network that shares the airspace). The client signs an authorisation, often called a rules-of-engagement document. That signature is the only thing that separates a penetration test from a crime.
-
-On site, the company typically says something like "here is our guest SSID and our corporate SSID, see if you can get onto the corporate one or capture a password." From there I map what is in the air, pick the in-scope target, capture a handshake, take it away to crack offline, and if evil twin is in scope I test whether staff devices will trust a lookalike network. At the end I write up what worked, what the password strength was, whether PMF was on, and whether their monitoring saw me. Everything below is that workflow.
-
-The assessment follows the same lifecycle every time, and it does not end at the crack. It ends at a retest that confirms the fix worked.
+Then work the in-scope target: map the air, capture a handshake, crack offline, test evil-twin trust if in scope, and write up what worked, the password strength, whether PMF was on, and whether monitoring saw you. It does not end at the crack; it ends at a retest that confirms the fix.
 
 ```mermaid
 flowchart LR
@@ -199,13 +191,11 @@ flowchart LR
 ## What you need
 <a id="what-you-need"></a>
 
-**A WiFi adapter that supports monitor mode and packet injection.** This is the one piece of kit that matters.
+**A WiFi adapter with monitor mode and packet injection.** The one piece of kit that matters.
 
-**Monitor mode** is a mode your wireless card can be put into where it stops behaving like a normal client and instead listens to every 802.11 frame in the air, including management frames from networks it is not connected to. Normal "managed" mode only hears traffic for the network you joined. Monitor mode is what lets airodump-ng see every nearby AP and client, and **packet injection** is what lets you send crafted frames like deauthentication.
-
-**A myth worth killing:** monitor mode does **not** physically harm your adapter or your laptop. It is a software mode, nothing more. What is true is that many laptop **internal** WiFi cards (especially Intel ones) either do not support monitor mode and injection at all, or support it badly. That is a driver and chipset limitation, not damage. If your internal card does not do it, you do not break anything by trying, you just get an error. The fix is an external USB adapter with a known-good chipset.
-
-**Linux.** Run Kali or Parrot, either as your main OS, a dual boot, or a live USB. A VM works too, but you must pass the USB adapter through to the VM, because the wireless stack needs direct access to the hardware. I keep a dual boot so the card talks straight to the kernel.
+- **Monitor mode** listens to every 802.11 frame in the air, not just your own network; **injection** sends crafted frames like deauth. Together they are what airodump and aireplay need.
+- **Myth:** monitor mode does not harm your card, it is a software mode. Many laptop internal cards (especially Intel) just do not support it well. Fix: an external USB adapter with a known-good chipset.
+- **Linux:** Kali or Parrot (main OS, dual boot, or live USB). In a VM, pass the USB adapter through to the guest.
 
 ## Recommended adapters
 <a id="recommended-adapters"></a>
@@ -295,7 +285,7 @@ sudo ./Documents/install.sh
 ## The toolkit, tool by tool
 <a id="toolkit"></a>
 
-Before the workflow, here is what each tool in the kit is actually for, how you get it, and where its limits are. I have grouped them by the job they do on an engagement. Everything marked **apt** ships in Kali or installs with `sudo apt install`; a few of the Enterprise tools are a `git clone` because they are not packaged.
+What each tool is for, how to get it, and its limits, grouped by job. **apt** = ships in Kali or `sudo apt install`; a few Enterprise tools are a `git clone`.
 
 ### Recon and monitoring
 | Tool | Role | Install | Notes and limits |
@@ -477,7 +467,7 @@ What the columns mean:
 ## Working on 5 GHz and the higher bands
 <a id="five-ghz"></a>
 
-Most guides stop at 2.4 GHz because the cheapest adapters do. On a real corporate test that is a gap: the sensitive networks increasingly live on 5 GHz (and now 6 GHz), and missing them means missing the networks that matter. The attacks are the same; what changes is the spectrum, the hardware, and one regulatory rule that will quietly break your capture if you do not know about it.
+Sensitive networks increasingly live on 5 GHz (and 6 GHz). The attacks are the same; what changes is the spectrum, the hardware, and one rule (DFS) that can quietly break your capture.
 
 ```mermaid
 flowchart LR
@@ -505,34 +495,34 @@ sudo airodump-ng wlan0mon --band a          # 5 GHz only
 sudo airodump-ng wlan0mon --band abg        # 2.4 and 5 GHz together
 ```
 
-**You need 5 GHz-capable hardware.** A 2.4 GHz-only adapter (the AR9271 classic) simply cannot see or touch these networks. Use a dual-band chipset from the [adapter table](#recommended-adapters): the MediaTek MT7612U (AWUS036ACM) is the clean in-kernel choice.
+**Hardware.** A 2.4 GHz-only adapter (AR9271) cannot see these networks. Use a dual-band chipset from the [adapter table](#recommended-adapters); the MT7612U (AWUS036ACM) is the clean in-kernel pick.
 
-**DFS is the rule that catches people out.** Large parts of 5 GHz (UNII-2 and 2e, roughly channels 52 to 144) are shared with weather and military radar, under Dynamic Frequency Selection. Two consequences on a test:
+**DFS catches people out.** UNII-2/2e (channels 52 to 144) are shared with radar under Dynamic Frequency Selection:
 
-- Many client adapters will **not transmit** on DFS channels at all, and some will not even passively capture well there. If your target AP sits on channel 100 and your capture is empty, the adapter, not the attack, is usually why.
-- An AP on a DFS channel must vacate it for 30 seconds if it thinks it hears radar. A deauth/evil-twin test can look like it failed when the AP simply moved channel. Confirm the channel before you conclude anything.
+- Many adapters will **not transmit** on DFS channels, and some capture poorly there. Empty capture on channel 100 is usually the adapter, not the attack.
+- An AP must vacate a DFS channel for 30s if it thinks it hears radar, so a test can look failed when the AP just moved. Confirm the channel first.
 
-**Channel width matters for lock-on.** 5 GHz commonly runs 80 MHz (and 160 MHz on WiFi 6). When you pin airodump to a target, pin the **primary/control channel** the AP advertises, not a secondary one, or you will sit on the wrong frequency and catch nothing.
+**Channel width.** Pin airodump to the AP's **primary/control channel**, not a secondary one, or you sit on the wrong frequency and catch nothing.
 
-**6 GHz (WiFi 6E/7)** is newest and least congested, and uses OWE/WPA3 by design. Tooling and adapter support on Linux still lags, so treat 6 GHz capture as hardware-dependent and test your kit in a lab before relying on it in the field. Do not claim 6 GHz coverage in a report you could not actually perform.
+**6 GHz (WiFi 6E/7).** OWE/WPA3 by design, Linux tooling still lags. Test your kit in a lab first, and do not claim 6 GHz coverage you could not perform.
 
 The checklist for this band lives at [`checklists/five-ghz-assessment.md`](checklists/five-ghz-assessment.md).
 
 ## Lock onto one target
 <a id="lock-onto-one-target"></a>
 
-Once I have picked an in-scope network, I stop sweeping and watch only it, on its channel, and write everything to disk. From the example above I take the BSSID and its channel:
+Pick the in-scope target, stop sweeping, and watch only it on its channel, writing to disk:
 
 ```bash
 sudo airodump-ng --bssid 3C:84:6A:11:22:33 -c 11 --write capture wlan0mon
 ```
 
-Now the display shows just that AP and the clients on it. `--write capture` saves to `capture-01.cap` and friends. Leave this running; it is the capture that will catch the handshake.
+`--write capture` saves to `capture-01.cap`. Leave it running: this is what catches the handshake.
 
 ## Capture the handshake
 <a id="capture-the-handshake"></a>
 
-A WPA/WPA2 network only shows its password (as a crackable hash) during the four-way **handshake**, which happens when a client joins. I can wait for someone to connect, or I can speed it up: knock an already-connected client off for a moment so it reconnects, and capture the handshake on the way back in.
+A WPA/WPA2 network only exposes its password (as a hash) during the four-way **handshake** when a client joins. Wait for one, or force it: deauth a connected client so it reconnects, and catch the handshake on the way back in.
 
 ```mermaid
 sequenceDiagram
@@ -548,7 +538,7 @@ sequenceDiagram
     Note over C,AP: Messages 1 and 2 carry exactly what offline cracking needs
 ```
 
-The capture only has to contain the first two messages: that is where the nonces and the MIC live, and it is what `hashcat` grinds against offline. You never learn the password on the air, only the material to guess it later.
+The capture only needs the first two messages (the nonces and MIC). You never learn the password on the air, only the material to crack it offline.
 
 With the targeted airodump still running in one terminal, in another I send a short, targeted deauth at one client:
 
@@ -575,13 +565,9 @@ echo "3C846A112233" > target.txt
 sudo hcxdumptool -i wlan0mon -o capture.pcapng --enable_status=1 --filterlist_ap=target.txt --filtermode=2
 ```
 
-```
-Start capturing (press CTRL+C to stop) ...
-15:15:01  [1] PMKID: 3C846A112233 / 112233445566 / HomeWiFi
-^C
-Summary:
-  PMKIDs: 1
-```
+<div align="center">
+  <img src="assets/pmkid-capture.png" alt="Illustrative hcxdumptool output capturing a PMKID with no client and no deauth" width="900">
+</div>
 
 ## Deauth and denial of service
 <a id="deauth-and-denial-of-service"></a>
@@ -761,12 +747,9 @@ Add rules to stretch a wordlist (this is where real cracks come from):
 hashcat -m 22000 hash.22000 /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule
 ```
 
-```
-Status...........: Cracked
-Hash.Mode........: 22000 (WPA-PBKDF2-PMKID+EAPOL)
-Recovered........: 1/1 (100.00%)
-Candidate........: TargetPassword123
-```
+<div align="center">
+  <img src="assets/hashcat-crack.png" alt="Illustrative hashcat output showing a cracked WPA handshake and the recovered candidate password" width="900">
+</div>
 
 > Note: the older `hcxpcaptool` and hashcat mode `16800` are legacy. Modern Kali uses `hcxpcapngtool` and mode `22000`.
 
@@ -784,37 +767,24 @@ A generic list rarely beats a password someone actually chose. Build a targeted 
 ## WPS attacks
 <a id="wps-attacks"></a>
 
-WPS (WiFi Protected Setup) is the eight-digit PIN feature on many routers. It is a known weak point, because the PIN can be brute forced. First find APs with WPS on:
+WPS (WiFi Protected Setup) is an eight-digit PIN feature that can be brute forced. Find APs with WPS on, then brute an unlocked one with **reaver** or **bully**:
 
 ```bash
-sudo wash -i wlan0mon
+sudo wash -i wlan0mon                                          # find WPS APs
+sudo reaver -i wlan0mon -b 00:11:22:33:44:55 -vv               # brute the PIN
+sudo bully  wlan0mon -b 00:11:22:33:44:55 -e TargetESSID -c 11 # alternative
 ```
 
-```
-WPS  BSSID              Channel  RSSI  WPS Version  WPS Locked  ESSID
-00:11:22:33:44:55      11       -42   1.0          No          TargetESSID
-AA:BB:CC:DD:EE:FF      6        -75   1.0          Yes         Neighbor_Net
-```
+<div align="center">
+  <img src="assets/wps-attack.png" alt="Illustrative wash listing WPS APs and reaver recovering the WPS PIN and WPA PSK" width="900">
+</div>
 
-Target one with **reaver** or **bully** (only ones marked `WPS Locked: No` are worth it):
-
-```bash
-sudo reaver -i wlan0mon -b 00:11:22:33:44:55 -vv
-sudo bully wlan0mon -b 00:11:22:33:44:55 -e TargetESSID -c 11
-```
-
-```
-[+] Trying pin '12345670'
-[+] WPS PIN: '12345670'
-[+] WPA PSK: 'TargetWPAKey123'
-```
-
-The lesson for the report: if WPS is on, the WPA password length barely matters. Turning WPS off is one of the highest-value fixes you can recommend.
+Only `WPS Locked: No` APs are worth it. The lesson for the report: if WPS is on, passphrase length barely matters. Turning WPS off is one of the highest-value fixes.
 
 ## The evil twin
 <a id="the-evil-twin"></a>
 
-An evil twin is a fake copy of a real network. The point of testing it is to answer a defensive question: **will staff devices silently trust a lookalike AP, and what leaks if they do?** This is why open and cleartext traffic on public WiFi is dangerous, and the write-up is really an argument for a VPN and for 802.1X / certificate-pinned WiFi.
+A fake copy of a real network. It answers one defensive question: **will staff devices silently trust a lookalike AP, and what leaks if they do?** The write-up is really the argument for a VPN and 802.1X / certificate-pinned WiFi.
 
 ```mermaid
 flowchart LR
@@ -1007,10 +977,9 @@ Deauth frames are 802.11 management frames with subtype `0x0c` (12). You can wat
 sudo tshark -i wlan0mon -Y "wlan.fc.type_subtype == 12" -T fields -e frame.time -e wlan.sa -e wlan.da
 ```
 
-```
-Jul 10 14:25:11.001   aa:bb:cc:dd:ee:ff   ff:ff:ff:ff:ff:ff
-Jul 10 14:25:11.052   aa:bb:cc:dd:ee:ff   ff:ff:ff:ff:ff:ff
-```
+<div align="center">
+  <img src="assets/deauth-detection.png" alt="Illustrative tshark output showing a burst of broadcast deauth frames, the signature of a deauth attack" width="900">
+</div>
 
 In Wireshark, the same filter:
 
