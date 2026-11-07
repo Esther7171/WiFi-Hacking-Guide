@@ -36,7 +36,7 @@ Any disruptive or credential-capturing step is marked **lab only**: demo it agai
 ## The whole procedure at a glance
 
 <div align="center">
-  <img src="assets/wifi-testing-procedure.png" alt="WiFi penetration test full procedure: prepare, attack in scope, defend and report" width="900">
+  <img src="https://github.com/user-attachments/assets/c7ecd48f-109d-4470-9974-61b1fcdfc916" alt="WiFi penetration test full procedure: prepare, attack in scope, defend and report" width="900">
 </div>
 
 Three phases, and every attack step has a matching defence step: prove the gap, then show how to detect and close it.
@@ -63,7 +63,7 @@ Three phases, and every attack step has a matching defence step: prove the gap, 
 9. [The toolkit, tool by tool (and the aircrack-ng suite)](#toolkit)
 
 **The workflow**
-10. [Monitor mode, step by step](#monitor-mode)
+10. [How to turn on monitor mode](#monitor-mode)
 11. [Recon: scan for networks and clients](#recon)
 12. [Working on 5 GHz and the higher bands](#five-ghz)
 13. [Lock onto one target](#lock-onto-one-target)
@@ -363,7 +363,7 @@ Most of the workflow above runs on the aircrack-ng suite, which is not one progr
 
 The practical core is the four in bold. Most of the rest exist for WEP, which you will rarely meet outside a lab, but they are worth recognising when you see them referenced.
 
-## Monitor mode
+## How to turn on monitor mode
 <a id="monitor-mode"></a>
 
 First, find your adapter. Plug it in and check it is seen on the USB bus:
