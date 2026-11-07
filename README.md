@@ -7,7 +7,7 @@ A hands-on WiFi hacking and penetration testing guide, written from my own lab n
 ## The whole procedure at a glance
 
 <div align="center">
-  <img src="assets/wifi-testing-procedure.png" alt="WiFi penetration test full procedure: prepare, attack in scope, defend and report" width="900">
+  <img src="https://github.com/user-attachments/assets/c7ecd48f-109d-4470-9974-61b1fcdfc916" alt="WiFi penetration test full procedure: prepare, attack in scope, defend and report" width="900">
 </div>
 
 A wireless assessment runs in three phases, and every attack step has a matching defence step. That pairing is the whole point: you run the attack to prove the gap, then you tell the client how to detect and close it.
