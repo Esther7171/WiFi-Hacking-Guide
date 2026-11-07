@@ -63,31 +63,32 @@ Three phases, and every attack step has a matching defence step: prove the gap, 
 9. [The toolkit, tool by tool (and the aircrack-ng suite)](#toolkit)
 
 **The workflow**
-10. [How to turn on monitor mode](#monitor-mode)
-11. [Recon: scan for networks and clients](#recon)
-12. [Working on 5 GHz and the higher bands](#five-ghz)
-13. [Lock onto one target](#lock-onto-one-target)
-14. [Capture the WPA/WPA2 handshake](#capture-the-handshake)
-15. [Deauth and denial of service](#deauth-and-denial-of-service)
-16. [When aireplay-ng is weak: mdk4](#mdk4)
-17. [Crack it: aircrack-ng, Hashcat, John](#crack-it)
-18. [WPS attacks: wash, reaver, bully](#wps-attacks)
-19. [The evil twin](#the-evil-twin)
-20. [Automate it: wifite and airgeddon](#automate-it)
-21. [Fake authentication and ARP replay (WEP)](#fake-auth)
-22. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
+10. [How a hacker cracks a home WiFi password](#attack-overview)
+11. [How to turn on monitor mode](#monitor-mode)
+12. [Recon: scan for networks and clients](#recon)
+13. [Working on 5 GHz and the higher bands](#five-ghz)
+14. [Lock onto one target](#lock-onto-one-target)
+15. [Capture the WPA/WPA2 handshake](#capture-the-handshake)
+16. [Deauth and denial of service](#deauth-and-denial-of-service)
+17. [When aireplay-ng is weak: mdk4](#mdk4)
+18. [Crack it: aircrack-ng, Hashcat, John](#crack-it)
+19. [WPS attacks: wash, reaver, bully](#wps-attacks)
+20. [The evil twin](#the-evil-twin)
+21. [Automate it: wifite and airgeddon](#automate-it)
+22. [Fake authentication and ARP replay (WEP)](#fake-auth)
+23. [WPA2-Enterprise / 802.1X testing](#wpa2-enterprise)
 
 **Defence and reporting**
-23. [How the blue team detects it](#how-the-blue-team-detects-it)
-24. [Hardening and defence](#hardening-and-defence)
-25. [Troubleshooting](#troubleshooting)
-26. [Choosing the right attack](#choosing-the-right-attack)
-27. [Where IoT fits in](#where-iot-fits-in)
-28. [Wireless pentest checklist](#checklist)
-29. [Common ports reference](#ports)
-30. [Professional reporting](#reporting)
-31. [References and further learning](#references)
-32. [Legal and ethics](#legal-and-ethics)
+24. [How the blue team detects it](#how-the-blue-team-detects-it)
+25. [Hardening and defence](#hardening-and-defence)
+26. [Troubleshooting](#troubleshooting)
+27. [Choosing the right attack](#choosing-the-right-attack)
+28. [Where IoT fits in](#where-iot-fits-in)
+29. [Wireless pentest checklist](#checklist)
+30. [Common ports reference](#ports)
+31. [Professional reporting](#reporting)
+32. [References and further learning](#references)
+33. [Legal and ethics](#legal-and-ethics)
 
 ---
 
@@ -363,6 +364,21 @@ Most of the workflow above runs on the aircrack-ng suite, which is not one progr
 
 The practical core is the four in bold. Most of the rest exist for WEP, which you will rarely meet outside a lab, but they are worth recognising when you see them referenced.
 
+## How a hacker cracks a home WiFi password
+<a id="attack-overview"></a>
+
+The whole attack is four steps. The rest of this guide demonstrates each one in order.
+
+```mermaid
+flowchart LR
+    A[Get in range<br/>of the network] --> B[Deauth one connected client<br/>so it reconnects]
+    B --> C[Capture the EAPOL<br/>4-way handshake]
+    C --> D[Crack the hash offline<br/>with a wordlist]
+    D --> E[WiFi password<br/>recovered]
+```
+
+Now let us demonstrate it, starting with the adapter.
+
 ## How to turn on monitor mode
 <a id="monitor-mode"></a>
 
@@ -380,7 +396,7 @@ iwconfig
 
 It will say `Mode:Managed`. Two ways to flip it to monitor.
 
-### The manual way with iw / ifconfig (good to understand once)
+### How to turn on monitor mode manually (iw / ifconfig)
 
 ```bash
 sudo airmon-ng check kill           # stop NetworkManager and wpa_supplicant so they stop fighting you (this drops your WiFi, do not panic)
@@ -390,7 +406,7 @@ sudo ifconfig wlan0 up
 iwconfig                            # confirm it now says Mode:Monitor
 ```
 
-### The fast way (automated, aircrack-ng suite)
+### How to turn on monitor mode with airmon-ng
 
 ```bash
 sudo airmon-ng check kill
@@ -405,7 +421,7 @@ phy0    wlan0       ath9k_htc   Atheros AR9271
         (mac80211 monitor mode enabled on [phy0]wlan0mon)
 ```
 
-### Confirm injection works
+### How to check your adapter can do packet injection
 
 No point attacking with a card that cannot inject:
 
@@ -571,6 +587,17 @@ sudo hcxdumptool -i wlan0mon -o capture.pcapng --enable_status=1 --filterlist_ap
 
 ## Deauth and denial of service
 <a id="deauth-and-denial-of-service"></a>
+
+Beyond capturing a handshake, these are the ways a hacker disrupts or disconnects people on a network. Each is **lab only** and covered below (and in [mdk4](#mdk4)).
+
+```mermaid
+flowchart TD
+    X[Disrupt / disconnect clients] --> D[Deauth one client or all<br/>aireplay-ng --deauth]
+    X --> M[Mass deauth flood<br/>mdk4 mode d]
+    X --> B[Beacon flood, fake APs<br/>mdk4 mode b]
+    X --> F[Freeze the AP<br/>mdk4 mode a, auth DoS]
+    X --> A[Fake auth / association<br/>aireplay-ng --fakeauth]
+```
 
 The bounded deauth above is the capture step. The same frame, understood fully: a deauthentication frame tells a client it has been disconnected. Deauth frames are a normal, required part of 802.11, and before WPA3 they are unprotected, so any device that has seen the AP and client addresses can forge one.
 
