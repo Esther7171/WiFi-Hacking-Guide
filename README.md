@@ -873,7 +873,7 @@ The lesson for any report: if WEP is running anywhere, replace it now. For WPA/W
 ## WPA2-Enterprise / 802.1X testing
 <a id="wpa2-enterprise"></a>
 
-WPA2-Personal uses one shared passphrase. **WPA2-Enterprise** instead authenticates each user against a **RADIUS** server over **802.1X / EAP** (username/password with PEAP or EAP-TTLS, or a client certificate with EAP-TLS). There is no shared WiFi password to crack, so the test and the main weakness are different.
+**WPA2-Enterprise** authenticates each user against a **RADIUS** server over **802.1X / EAP** (PEAP or EAP-TTLS with a password, or EAP-TLS with a client cert). No shared password to crack, so the weakness is different.
 
 ```mermaid
 sequenceDiagram
@@ -891,7 +891,7 @@ sequenceDiagram
     AP->>C: EAPOL success, keys installed
 ```
 
-**The flaw to test for:** whether clients **validate the RADIUS server certificate**. If a device will hand its credentials to any AP advertising the right SSID, an attacker stands up a fake AP plus a fake RADIUS server, and the client authenticates *to the attacker*, leaking its username and an MSCHAPv2 challenge/response that cracks offline. Nearly every real Enterprise finding traces back to this.
+**The flaw to test for:** whether clients **validate the RADIUS server certificate**. If not, a fake AP plus a fake RADIUS server makes the client authenticate *to the attacker*, leaking its username and an MSCHAPv2 challenge/response that cracks offline. Nearly every Enterprise finding traces back to this.
 
 > **Most sensitive step on the engagement.** Impersonation captures real staff credentials. Get it named explicitly in the rules-of-engagement, store captures encrypted, and destroy them after reporting.
 
@@ -1023,7 +1023,7 @@ flowchart TD
     R -->|No| I[Investigate: locate source, capture pcap,<br/>check if PMF would have stopped it, escalate]
 ```
 
-A proper wireless IDS such as **Kismet** or **nzyme** alerts on all of this automatically. The point of the test is to check the client has one, that its alerts reach a human, and that the human knows this flow. An alert nobody triages is the same as no alert, and proving that gap is often the most useful finding in the report.
+A wireless IDS (**Kismet**, **nzyme**) alerts on all of this. The test checks the client has one, its alerts reach a human, and someone triages them. An alert nobody reads is the same as no alert, and proving that gap is often the most useful finding.
 
 ## Hardening and defence
 <a id="hardening-and-defence"></a>
@@ -1074,7 +1074,7 @@ Where to aim, quickly:
 ## Where IoT fits in
 <a id="where-iot-fits-in"></a>
 
-You do not always need a laptop. A NodeMCU the size of a thumb, running on a power bank, can run deauth and beacon attacks on 2.4GHz on its own. I built one to understand that threat from the inside, and it pairs directly with the detection half of this guide.
+You do not always need a laptop. A thumb-sized NodeMCU on a power bank can run deauth and beacon attacks on 2.4GHz by itself. I built one to understand the threat from the inside; it pairs with the detection half of this guide.
 
 Full write-up and firmware: [ESP8266 Deauther](https://gitlab.com/deathesther/esp8266-deauther).
 
@@ -1196,9 +1196,9 @@ Ports in the 12345 / 27374 / 31337 range are classic trojan/backdoor defaults (N
 ## Professional reporting
 <a id="reporting"></a>
 
-The report is the deliverable, not the crack. A client pays for a document their team can act on, not for proof that you are clever. A wireless report that lands well does three things: it tells a manager the overall posture in plain language, it gives an engineer a specific, testable fix for each issue, and it keeps evidence redacted so it can be shared safely.
+The report is the deliverable, not the crack. A good one does three things: tells a manager the posture in plain language, gives an engineer a specific testable fix per issue, and keeps evidence redacted so it is safe to share.
 
-**Use the template.** A complete, reusable report template lives at [`checklists/final-report-template.md`](checklists/final-report-template.md). Copy it per engagement. It covers the executive summary, scope and methodology, the severity scale, the per-finding block, retesting, and appendices, with a worked sample finding.
+**Use the template.** A full report template is at [`checklists/final-report-template.md`](checklists/final-report-template.md): copy it per engagement. It covers the executive summary, scope and methodology, severity scale, per-finding block, retesting, and appendices, with a worked sample.
 
 **The structure in brief:**
 
@@ -1229,7 +1229,7 @@ The Enterprise section has a ready-to-use per-finding [reporting block](#wpa2-en
 ## References and further learning
 <a id="references"></a>
 
-Guided labs are the safest place to practise, because the target is provided and in scope by design. These rooms line up with the sections above. Work the concepts, then come back and read the matching defence section here. Do not copy room answers or paid walkthroughs; the point is to understand the method, which this guide explains in its own words.
+Guided labs are the safest place to practise: the target is in scope by design. These line up with the sections above. Understand the method, do not copy room answers.
 
 **Hands-on labs (TryHackMe):**
 
