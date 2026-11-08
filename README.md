@@ -1,6 +1,8 @@
 # WiFi Hacking and Penetration Testing Guide
 
-Hands-on WiFi penetration testing from my lab notes: recon, monitor mode, WPA/WPA2 handshake capture and offline cracking, WPS, evil twin, mdk4, and how a blue team detects and stops each one.
+A hands-on WiFi hacking and penetration testing guide, written from my own lab notes. It walks the full wireless workflow the way I run it on an authorised engagement: recon, monitor mode, capturing a WPA/WPA2 handshake, cracking it offline, WPS, the evil twin, and just as importantly how a blue team detects and shuts all of this down.
+
+It shows how a real attacker actually attacks, then replicates those same attacks in a lab you control, so you understand each one hands-on and not just in theory.
 
 > **Read this first.** For networks you own or have **written permission** to test, in a lab you control. Attacking or jamming WiFi you do not own is illegal almost everywhere (see [legal](#legal-and-ethics)). This exists so defenders understand the attack.
 
